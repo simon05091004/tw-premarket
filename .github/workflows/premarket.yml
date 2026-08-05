@@ -22,6 +22,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # 整個 job 都用台北時間：commit 訊息的日期也要對，
+    # 排程在 UTC 22:45 觸發,只設在單一步驟的話 date 會拿到前一天。
+    env:
+      TZ: Asia/Taipei
     steps:
       - uses: actions/checkout@v4
 
@@ -36,7 +40,6 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           CLAUDE_MODEL: claude-sonnet-5
-          TZ: Asia/Taipei
         run: |
           if [ -n "${{ inputs.target_date }}" ]; then
             python -m premarket.main --date "${{ inputs.target_date }}"
