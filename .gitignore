@@ -1,0 +1,13 @@
+# 虛擬環境（168MB 套件，Actions 會自己用 requirements.txt 重裝）
+.venv/
+venv/
+
+# 金鑰，絕對不能推上去
+.env
+
+# Python 快取
+__pycache__/
+*.py[cod]
+
+# macOS
+.DS_Store

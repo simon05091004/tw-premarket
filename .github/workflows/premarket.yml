@@ -1,0 +1,53 @@
+name: 台股盤前分析
+
+on:
+  schedule:
+    # GitHub Actions 用 UTC。台北 06:45 = UTC 22:45（前一天）
+    # 排程常延遲 5-15 分鐘，所以提前觸發，目標 07:00 前完成
+    - cron: "45 22 * * 0-4"   # UTC 週日~週四 = 台北週一~週五
+  workflow_dispatch:           # 允許手動觸發（補跑用）
+    inputs:
+      target_date:
+        description: "目標日期 YYYY-MM-DD（留空=今天）"
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: premarket
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: 產生盤前分析
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_MODEL: claude-sonnet-5
+          TZ: Asia/Taipei
+        run: |
+          if [ -n "${{ inputs.target_date }}" ]; then
+            python -m premarket.main --date "${{ inputs.target_date }}"
+          else
+            python -m premarket.main
+          fi
+
+      - name: 推回 repo
+        run: |
+          git config user.name  "premarket-bot"
+          git config user.email "premarket-bot@users.noreply.github.com"
+          git add docs/
+          git diff --staged --quiet || git commit -m "盤前分析 $(date +%Y-%m-%d)"
+          git push
