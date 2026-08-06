@@ -146,7 +146,22 @@ def main() -> int:
         return 0
 
     log.info("呼叫 Anthropic API…")
-    brief_md = analyze.generate_brief(payload_dict, prev_payload, session=args.session)
+    try:
+        brief_md = analyze.generate_brief(payload_dict, prev_payload, session=args.session)
+    except analyze.BriefTruncated as exc:
+        log.error("報告不完整，不寫出檔案: %s", exc)
+        return 1
+
+    # 檢查放在寫檔之前：截斷的報告一旦寫出去就會被 workflow commit 並發布，
+    # 而且 exit code 0 會讓 Actions 顯示綠勾,沒有人會發現。
+    if len(brief_md) < analyze.MIN_BRIEF_CHARS:
+        log.error(
+            "報告只有 %d 字元（低於 %d），視為產出失敗，不寫出檔案。內容: %r",
+            len(brief_md),
+            analyze.MIN_BRIEF_CHARS,
+            brief_md[:120],
+        )
+        return 1
 
     out_md = DOCS / f"{spec.out_stem}-{today.isoformat()}.md"
     out_md.write_text(

@@ -12,7 +12,15 @@ import anthropic
 log = logging.getLogger(__name__)
 
 MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-5")
-MAX_TOKENS = 8000  # Sonnet 5 預設開 adaptive thinking，思考與回應共用這個額度
+# max_tokens 是「思考 + 回應文字」的總上限,不是回應長度上限。
+# Sonnet 5 預設開 adaptive thinking,盤後 payload 大、思考量高,
+# 8000 會被思考吃掉大半,導致正文寫到一半就撞上限。
+MAX_TOKENS = 16000
+MIN_BRIEF_CHARS = 500  # 低於此長度視為產出失敗（正常報告 1500 字元以上）
+
+
+class BriefTruncated(RuntimeError):
+    """回應撞到 max_tokens —— 報告不完整,不可發布。"""
 PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 PROMPT_FILES = {
     "premarket": "premarket_system.md",
@@ -58,10 +66,34 @@ def generate_brief(
             + "\n- ".join(payload["missing"])
         )
 
+    system_prompt = _load_system_prompt(session)
+    user_content = "\n".join(parts)
+    log.info(
+        "送出 API：system %d 字元、payload %d 字元（其中今日數據 %d）、max_tokens=%d",
+        len(system_prompt),
+        len(user_content),
+        len(parts[1]),
+        MAX_TOKENS,
+    )
+
     resp = client.messages.create(
         model=MODEL,
         max_tokens=MAX_TOKENS,
-        system=_load_system_prompt(session),
-        messages=[{"role": "user", "content": "\n".join(parts)}],
+        system=system_prompt,
+        messages=[{"role": "user", "content": user_content}],
     )
-    return "".join(b.text for b in resp.content if b.type == "text").strip()
+
+    text = "".join(b.text for b in resp.content if b.type == "text").strip()
+    log.info(
+        "API 回應：stop_reason=%s input_tokens=%s output_tokens=%s → 產出 %d 字元",
+        resp.stop_reason,
+        resp.usage.input_tokens,
+        resp.usage.output_tokens,
+        len(text),
+    )
+    if resp.stop_reason == "max_tokens":
+        raise BriefTruncated(
+            f"回應撞到 max_tokens={MAX_TOKENS}（output_tokens={resp.usage.output_tokens}），"
+            f"只產出 {len(text)} 字元"
+        )
+    return text
