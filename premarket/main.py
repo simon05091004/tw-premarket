@@ -1,5 +1,5 @@
 """
-盤前分析主程式。
+盤前／盤後分析主程式。
 
 執行流程:
   1. 判斷今天是否為交易日（用證交所有無「前一交易日」資料反推，不維護行事曆）
@@ -8,8 +8,9 @@
   4. 輸出 Markdown + HTML 到 docs/，供 GitHub Pages 服務
 
 用法:
-  python -m premarket.main            # 正常執行
-  python -m premarket.main --dry-run  # 只抓資料，不呼叫 API（省錢，除錯用）
+  python -m premarket.main                        # 盤前，正常執行
+  python -m premarket.main --dry-run              # 只抓資料，不呼叫 API（省錢，除錯用）
+  python -m premarket.main --session postmarket   # 盤後籌碼版
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ import argparse
 import json
 import logging
 import sys
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -34,6 +36,25 @@ logging.basicConfig(
     stream=sys.stdout,
 )
 log = logging.getLogger("premarket")
+
+
+@dataclass(frozen=True)
+class SessionSpec:
+    """兩種 session 的差異全部集中在這裡,主流程只有一條路。"""
+
+    payload_prefix: str  # docs/data/<prefix>-YYYY-MM-DD.json
+    out_stem: str        # docs/<stem>-YYYY-MM-DD.md / .html
+    latest_html: str     # 固定網址的最新一份
+    title: str
+
+
+SPECS = {
+    "premarket": SessionSpec("payload", "premarket", "index.html", "台股盤前分析"),
+    # 盤後另存一組檔名:index.html 是盤前用的,蓋掉會讓首頁在盤後變成籌碼報告
+    "postmarket": SessionSpec(
+        "postpayload", "postmarket", "latest-postmarket.html", "台股盤後籌碼"
+    ),
+}
 
 
 def find_prev_trade_date(today: date, max_back: int = 10) -> date | None:
@@ -56,8 +77,9 @@ def is_trading_day(today: date) -> bool:
     return today.weekday() < 5
 
 
-def load_prev_payload() -> dict | None:
-    files = sorted(DATA.glob("payload-*.json"))
+def load_prev_payload(prefix: str = "payload") -> dict | None:
+    """前一份「同類型」報告的 payload —— 盤前盤後各自一組,不互相汙染。"""
+    files = sorted(DATA.glob(f"{prefix}-*.json"))
     if not files:
         return None
     try:
@@ -70,7 +92,14 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true", help="不呼叫 API，只輸出 JSON")
     ap.add_argument("--date", help="覆寫目標日期 YYYY-MM-DD（回測／補跑用）")
+    ap.add_argument(
+        "--session",
+        choices=sorted(SPECS),
+        default="premarket",
+        help="premarket=盤前分析（預設）／postmarket=盤後籌碼",
+    )
     args = ap.parse_args()
+    spec = SPECS[args.session]
 
     today = (
         datetime.strptime(args.date, "%Y-%m-%d").date()
@@ -88,7 +117,16 @@ def main() -> int:
         return 1
 
     log.info("抓取資料中…")
-    payload = fetch.build_payload(prev, today)
+    if args.session == "postmarket":
+        try:
+            from . import fetch_post
+        except ImportError as exc:  # noqa: BLE001
+            log.error("盤後資料層缺失（premarket/fetch_post.py）: %s", exc)
+            return 1
+        # 盤後看的是今天收盤後的結果,所以 session_date 是今天、prev 供計算變化量
+        payload = fetch_post.build_postmarket_payload(today, prev)
+    else:
+        payload = fetch.build_payload(prev, today)
     if payload.missing:
         log.warning("缺少資料源: %s", "、".join(payload.missing))
     if len(payload.missing) >= 5:
@@ -96,9 +134,9 @@ def main() -> int:
         return 1
 
     DATA.mkdir(parents=True, exist_ok=True)
-    prev_payload = load_prev_payload()
+    prev_payload = load_prev_payload(spec.payload_prefix)
     payload_dict = payload.to_dict()
-    (DATA / f"payload-{today.isoformat()}.json").write_text(
+    (DATA / f"{spec.payload_prefix}-{today.isoformat()}.json").write_text(
         json.dumps(payload_dict, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
@@ -108,14 +146,16 @@ def main() -> int:
         return 0
 
     log.info("呼叫 Anthropic API…")
-    brief_md = analyze.generate_brief(payload_dict, prev_payload)
+    brief_md = analyze.generate_brief(payload_dict, prev_payload, session=args.session)
 
-    out_md = DOCS / f"premarket-{today.isoformat()}.md"
-    out_md.write_text(f"# 台股盤前分析 {today.isoformat()}\n\n{brief_md}\n", encoding="utf-8")
+    out_md = DOCS / f"{spec.out_stem}-{today.isoformat()}.md"
+    out_md.write_text(
+        f"# {spec.title} {today.isoformat()}\n\n{brief_md}\n", encoding="utf-8"
+    )
 
     html_doc = render.render(payload_dict, brief_md)
-    (DOCS / f"premarket-{today.isoformat()}.html").write_text(html_doc, encoding="utf-8")
-    (DOCS / "index.html").write_text(html_doc, encoding="utf-8")  # 最新一份
+    (DOCS / f"{spec.out_stem}-{today.isoformat()}.html").write_text(html_doc, encoding="utf-8")
+    (DOCS / spec.latest_html).write_text(html_doc, encoding="utf-8")  # 最新一份
 
     log.info("完成: %s", out_md.name)
     return 0

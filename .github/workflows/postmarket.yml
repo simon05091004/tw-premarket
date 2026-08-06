@@ -1,0 +1,55 @@
+name: 台股盤後籌碼分析
+
+on:
+  schedule:
+    # 台北 21:30 = UTC 13:30（同一天）
+    # 融資餘額約 21:00 公布，排 21:30 可完整涵蓋
+    # 若想改跑 16:00（融資會缺）：改成 "0 8 * * 1-5"
+    - cron: "30 13 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: "目標日期 YYYY-MM-DD（留空=今天）"
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: postmarket
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: 產生盤後籌碼分析
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_MODEL: claude-sonnet-5
+          TZ: Asia/Taipei
+        run: |
+          if [ -n "${{ inputs.target_date }}" ]; then
+            python -m premarket.main --session postmarket --date "${{ inputs.target_date }}"
+          else
+            python -m premarket.main --session postmarket
+          fi
+
+      - name: 推回 repo
+        run: |
+          git config user.name  "premarket-bot"
+          git config user.email "premarket-bot@users.noreply.github.com"
+          git pull --rebase
+          git add docs/
+          git diff --staged --quiet || git commit -m "盤後籌碼分析 $(date +%Y-%m-%d)"
+          git push
