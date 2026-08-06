@@ -302,6 +302,12 @@ def fetch_taiex_ohlc(trade_date: date, lookback: int = 20) -> list[dict] | None:
             )
     if not frames:
         return None
+    # 證交所回傳整個月，含 trade_date 之後的日期。
+    # 不過濾的話，--date 回測時最後一根 K 棒會是未來的交易日。
+    cutoff = trade_date.isoformat()
+    frames = [f for f in frames if f["date"] <= cutoff]
+    if not frames:
+        return None
     frames.sort(key=lambda x: x["date"])
     return frames[-lookback:]
 
@@ -311,11 +317,12 @@ def fetch_taiex_turnover(trade_date: date, lookback: int = 10) -> list[dict] | N
     js = _get_json(TWSE_FMTQIK, {"date": trade_date.strftime("%Y%m%d"), "response": "json"})
     if not js or js.get("stat") != "OK":
         return None
+    cutoff = trade_date.isoformat()  # 同上：月表會含 trade_date 之後的日期
     out = []
     for r in js.get("data", []):
         iso = _roc_to_iso(r[0])
         amt = _num(r[2])
-        if iso and amt is not None:
+        if iso and amt is not None and iso <= cutoff:
             out.append({"date": iso, "turnover_yi": round(amt / 1e8, 2)})
     return out[-lookback:] or None
 
