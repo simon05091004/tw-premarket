@@ -279,11 +279,25 @@ def _roc_to_iso(s: str) -> str | None:
         return None
 
 
+def _months_back(d: date, n: int) -> date:
+    """往回 n 個月，回傳該月的某一天（證交所月報表只看年月）。"""
+    for _ in range(n):
+        d = d.replace(day=1) - timedelta(days=1)
+    return d
+
+
 def fetch_taiex_ohlc(trade_date: date, lookback: int = 20) -> list[dict] | None:
-    """加權指數日 OHLC（含前一個月，供計算均線與波段幅度）。"""
+    """
+    加權指數日 OHLC，供計算均線與波段幅度。
+
+    證交所這支是「月」報表，一次要抓幾個月由 lookback 決定：
+    每月約 20 個交易日,多抓一個月當緩衝（遇長假時月交易日會少於 20）。
+    lookback=60（盤後算 60MA）會抓四個月。
+    """
+    months = max(2, lookback // 20 + 2)
     frames: list[dict] = []
-    for offset in (1, 0):
-        d = (trade_date.replace(day=1) - timedelta(days=1)) if offset else trade_date
+    for offset in range(months - 1, -1, -1):
+        d = _months_back(trade_date, offset)
         js = _get_json(TWSE_TAIEX_HIST, {"date": d.strftime("%Y%m%d"), "response": "json"})
         if not js or js.get("stat") != "OK":
             continue

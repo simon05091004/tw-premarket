@@ -308,7 +308,7 @@ def build_postmarket_payload(session_date: date, prev_date: date | None = None) 
         prev_trade_date=prev_date.isoformat() if prev_date else None,
     )
 
-    p.taiex_ohlc = fetch_taiex_ohlc(session_date)
+    p.taiex_ohlc = fetch_taiex_ohlc(session_date, lookback=60)  # 盤後 prompt 第 7 節要 60MA
     p.taiex_turnover = fetch_taiex_turnover(session_date)
     p.sector_indices = fetch_sector_indices(session_date)
     p.market_breadth = fetch_market_breadth(session_date)
@@ -348,6 +348,16 @@ def build_postmarket_payload(session_date: date, prev_date: date | None = None) 
             if None not in (ma5, ma10, ma20):
                 d["均線多頭排列"] = ma5 > ma10 > ma20
                 d["指數對20日均線乖離率"] = round((spot - ma20) / ma20 * 100, 2)
+
+            # 近 20 日高低點：K 棒現在有 60 根（供 60MA），這裡只取最後 20 根,
+            # 否則「近 20 日」會變成「近 60 日」。prompt 第 7 節要用。
+            recent = bars[-20:]
+            highs = [b["high"] for b in recent if b.get("high") is not None]
+            lows = [b["low"] for b in recent if b.get("low") is not None]
+            if highs and lows:
+                d["近20日最高"] = max(highs)
+                d["近20日最低"] = min(lows)
+                d["距近20日高點_pct"] = round((max(highs) - spot) / spot * 100, 2)
 
     if p.taiex_turnover and len(p.taiex_turnover) >= 2:
         d["當日成交金額_億"] = p.taiex_turnover[-1]["turnover_yi"]
