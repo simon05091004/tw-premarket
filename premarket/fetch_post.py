@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field, asdict
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -58,43 +59,58 @@ def _rows_from(js: Any, want: str) -> list[list[str]] | None:
 # 類股指數（電子、金融、櫃買對照用）
 # ---------------------------------------------------------------------------
 
+# 名稱必須與證交所完全一致 —— 對不上會靜默漏抓。
+# 曾用「電子類指數 / 航運業類指數 / 塑膠工業類指數」，實際名稱是下列這些。
 WATCH_SECTORS = (
     "發行量加權股價指數",
-    "電子類指數",
+    "電子工業類指數",
     "金融保險類指數",
     "半導體類指數",
     "電腦及週邊設備類指數",
     "其他電子類指數",
-    "航運業類指數",
-    "塑膠工業類指數",
+    "航運類指數",
+    "塑膠類指數",
 )
+
+_HTML_TAG = re.compile(r"<[^>]*>")
+
+
+def _sign_from_cell(cell: Any) -> int:
+    """
+    漲跌符號欄回傳的是 HTML：<p style ='color:green'>-</p>。
+    直接拿去比對 "-" 永遠不成立，會把所有跌勢當成漲勢。
+    """
+    return -1 if _HTML_TAG.sub("", str(cell)).strip() in {"-", "－"} else 1
 
 
 def fetch_sector_indices(d: date) -> dict[str, dict] | None:
     """各類股收盤指數與漲跌點。"""
     js = _get_json(TWSE_MI_INDEX, {"date": d.strftime("%Y%m%d"), "type": "IND", "response": "json"})
-    rows = _rows_from(js, "指數")
+    if not js:
+        return None
+    # 這支回傳多張表（價格指數／報酬指數／跨市場…），類股在價格指數那張。
+    # 報酬指數的名稱不同（「發行量加權股價報酬指數」），不會誤配。
+    rows: list[list[str]] = []
+    for t in js.get("tables", []) or []:
+        rows.extend(t.get("data") or [])
     if not rows:
         return None
+
     out: dict[str, dict] = {}
     for r in rows:
-        if len(r) < 4:
+        if len(r) < 5:
             continue
         name = r[0].strip()
-        if name not in WATCH_SECTORS:
+        if name not in WATCH_SECTORS or name in out:
             continue
         close = _num(r[1])
-        chg = _num(r[3]) if len(r) > 3 else None
-        # 漲跌欄位常見為「+/-」符號另存一欄，這裡容錯處理
-        sign = r[2].strip() if len(r) > 2 else ""
-        if chg is not None and sign in {"-", "－"}:
-            chg = -abs(chg)
+        pts = _num(r[3])
+        sign = _sign_from_cell(r[2])
         out[name] = {
             "close": close,
-            "change": chg,
-            "change_pct": round(chg / (close - chg) * 100, 2)
-            if close is not None and chg not in (None, 0) and close != chg
-            else None,
+            "change": round(pts * sign, 2) if pts is not None else None,
+            # 漲跌百分比欄位本身已帶正負號，直接採用，不要自己回推
+            "change_pct": _num(r[4]),
         }
     return out or None
 
@@ -104,30 +120,42 @@ def fetch_sector_indices(d: date) -> dict[str, dict] | None:
 # ---------------------------------------------------------------------------
 
 
+_BREADTH_CELL = re.compile(r"([\d,]+)(?:\s*\(([\d,]+)\))?")
+
+
 def fetch_market_breadth(d: date) -> dict | None:
     """
     上漲/下跌/持平家數，以及漲停、跌停家數。
     大盤漲 3% 但只有 400 家上漲，跟 1,200 家上漲是完全不同的行情。
+
+    回傳格式是 ['上漲(漲停)', '6,466(253)', '530(20)']：
+    家數與漲停數擠在同一格,舊版直接 _num() 會因為括號而回 None。
+    欄位有「整體市場」與「股票」兩欄,這裡取**股票**——
+    整體市場含權證與 ETF（六千多筆）,拿來談市場廣度會嚴重失真。
     """
     js = _get_json(TWSE_MI_INDEX, {"date": d.strftime("%Y%m%d"), "type": "MS", "response": "json"})
-    rows = _rows_from(js, "漲跌")
+    rows = _rows_from(js, "漲跌證券數")
     if not rows:
         return None
+
+    def parse(cell: str) -> tuple[float | None, float | None]:
+        m = _BREADTH_CELL.search(str(cell))
+        if not m:
+            return None, None
+        return _num(m.group(1)), (_num(m.group(2)) if m.group(2) else None)
+
     out: dict[str, float | None] = {}
     for r in rows:
-        if len(r) < 2:
+        if len(r) < 3:
             continue
         label = str(r[0]).replace(" ", "")
-        joined = " ".join(str(x) for x in r[1:])
-        if "上漲" in label:
-            out["上漲家數"] = _num(r[1])
-            if "漲停" in joined or len(r) > 2:
-                out["漲停家數"] = _num(r[2]) if len(r) > 2 else None
-        elif "下跌" in label:
-            out["下跌家數"] = _num(r[1])
-            out["跌停家數"] = _num(r[2]) if len(r) > 2 else None
-        elif "持平" in label or "平盤" in label:
-            out["持平家數"] = _num(r[1])
+        count, limit = parse(r[2])  # r[2] = 股票欄；r[1] 是整體市場
+        if label.startswith("上漲"):
+            out["上漲家數"], out["漲停家數"] = count, limit
+        elif label.startswith("下跌"):
+            out["下跌家數"], out["跌停家數"] = count, limit
+        elif label.startswith("持平") or label.startswith("平盤"):
+            out["持平家數"] = count
     return out or None
 
 
