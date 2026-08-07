@@ -55,7 +55,9 @@ jobs:
         run: |
           git config user.name  "premarket-bot"
           git config user.email "premarket-bot@users.noreply.github.com"
-          git pull --rebase          # 盤後 workflow 也會 commit docs/，先同步免得 push 被拒
+          # 先 commit 再 pull：此時 docs/ 已有剛產生的檔案,工作區不乾淨,
+          # 在 commit 之前 rebase 會因為 unstaged changes 直接失敗。
           git add docs/
           git diff --staged --quiet || git commit -m "盤前分析 $(date +%Y-%m-%d)"
+          git pull --rebase          # 盤後 workflow 也會 commit docs/，先同步免得 push 被拒
           git push
