@@ -40,7 +40,8 @@ log = logging.getLogger(__name__)
 
 TWSE_MI_INDEX = "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX"
 TWSE_T86 = "https://www.twse.com.tw/rwd/zh/fund/T86"
-TPEX_INDEX = "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes"
+TPEX_INDEX = "https://www.tpex.org.tw/openapi/v1/tpex_index"
+TPEX_TRADING = "https://www.tpex.org.tw/openapi/v1/tpex_daily_trading_index"
 
 
 def _rows_from(js: Any, want: str) -> list[list[str]] | None:
@@ -618,14 +619,48 @@ def fetch_basis_series(end: date, closes_by_date: dict[str, float], days: int = 
 
 def fetch_tpex_index(d: date) -> dict | None:
     """
-    櫃買指數。TPEx 端點近年改版頻繁 ——
-    若回 None，請用 Claude Code probe 一次實際回傳結構後修正（同 fetch_margin 的處理方式）。
+    櫃買指數（OHLC + 漲跌）與當日成交量值。
+
+    原本接的 tpex_mainboard_daily_close_quotes 是個股逐檔報價（上萬筆），
+    不是指數。指數在 /openapi/v1/tpex_index。
+
+    兩支端點的日期格式不同 —— 指數是西元 20260807，量值是民國 1150807，
+    這裡各自轉換。兩支都只提供最近 6 個交易日的滾動視窗，
+    補跑更早的日期會取不到（回 None，列入 missing）。
     """
-    js = _get_json(TPEX_INDEX)
-    if not isinstance(js, list) or not js:
+    want_ad = d.strftime("%Y%m%d")
+    want_roc = f"{d.year - 1911}{d.month:02d}{d.day:02d}"
+
+    rows = _get_json(TPEX_INDEX)
+    row = next(
+        (r for r in rows if str(r.get("Date")) == want_ad), None
+    ) if isinstance(rows, list) else None
+    if not row:
+        log.info("櫃買指數：%s 不在端點的滾動視窗內", d)
         return None
-    log.info("TPEX 端點回傳 %d 筆，需確認欄位結構", len(js))
-    return None  # 待 probe 後實作
+
+    close, chg = _num(row.get("Close")), _num(row.get("Change"))
+    out: dict[str, Any] = {
+        "收盤": close,
+        "開盤": _num(row.get("Open")),
+        "最高": _num(row.get("High")),
+        "最低": _num(row.get("Low")),
+        "漲跌": chg,
+        "漲跌幅_pct": (
+            round(chg / (close - chg) * 100, 2)
+            if close is not None and chg is not None and close != chg
+            else None
+        ),
+    }
+
+    vol = _get_json(TPEX_TRADING)
+    vrow = next(
+        (r for r in vol if str(r.get("Date")) == want_roc), None
+    ) if isinstance(vol, list) else None
+    if vrow:
+        amt = _num(vrow.get("TradeAmount"))
+        out["成交金額_億"] = round(amt / 1e8, 2) if amt is not None else None
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -762,6 +797,15 @@ def build_postmarket_payload(session_date: date, prev_date: date | None = None) 
         up, down = p.market_breadth.get("上漲家數"), p.market_breadth.get("下跌家數")
         if up and down:
             d["漲跌家數比"] = round(up / down, 2)
+
+    if p.tpex_index and p.tpex_index.get("漲跌幅_pct") is not None:
+        d["櫃買指數收盤"] = p.tpex_index["收盤"]
+        d["櫃買漲跌幅_pct"] = p.tpex_index["漲跌幅_pct"]
+        if d.get("當日漲跌幅") is not None:
+            # 櫃買以中小型股為主,與加權（權值股主導）的落差就是資金往哪邊跑
+            d["櫃買相對加權強弱_pct"] = round(
+                p.tpex_index["漲跌幅_pct"] - d["當日漲跌幅"], 2
+            )
 
     if p.foreign_ex_etf:
         for k in ("外資買賣超總額_億", "排除ETF後淨額_億", "ETF部分_億_換算", "ETF佔比_pct"):

@@ -36,6 +36,23 @@ def _load_system_prompt(session: str = "premarket") -> str:
     return (PROMPTS_DIR / name).read_text(encoding="utf-8")
 
 
+PREV_KEEP_KEYS = ("derived", "session_date", "target_session", "prev_trade_date", "missing")
+
+
+def _slim_prev(prev: dict | None) -> dict | None:
+    """
+    前一份 payload 只保留 derived 與日期欄位。
+
+    它的用途只有「算變化量」,而變化量全部來自衍生欄位。原始區塊（60 根 K 棒、
+    外資買賣超個股明細、期貨未平倉序列…）前一天的版本模型根本用不到,
+    盤後那份卻佔了約 14K 字元 —— 佔滿一半輸入,也連帶推高思考量。
+    """
+    if not prev:
+        return None
+    slim = {k: prev[k] for k in PREV_KEEP_KEYS if k in prev}
+    return slim or None
+
+
 def generate_brief(
     payload: dict,
     prev_payload: dict | None = None,
@@ -54,10 +71,11 @@ def generate_brief(
         "不得引入任何 JSON 以外的數字或消息。\n",
         "## 今日數據\n```json\n" + json.dumps(payload, ensure_ascii=False, indent=2) + "\n```",
     ]
-    if prev_payload:
+    prev_slim = _slim_prev(prev_payload)
+    if prev_slim:
         parts.append(
             "\n## 前一份報告的數據（僅供計算變化量，不要直接複述）\n```json\n"
-            + json.dumps(prev_payload, ensure_ascii=False, indent=2)
+            + json.dumps(prev_slim, ensure_ascii=False, indent=2)
             + "\n```"
         )
     if payload.get("missing"):
