@@ -139,5 +139,29 @@ class TestTruncationDetection(unittest.TestCase):
             )
 
 
+class TestTargetDate(unittest.TestCase):
+    """排程延遲跨過午夜時，盤後的目標日期必須回推。"""
+
+    def _at(self, iso: str, session: str = "postmarket"):
+        from datetime import datetime as dt
+
+        return main_mod._target_date(dt.fromisoformat(iso), session)
+
+    def test_postmarket_before_midnight_keeps_date(self) -> None:
+        self.assertEqual(str(self._at("2026-08-10T23:53")), "2026-08-10")
+
+    def test_postmarket_after_midnight_rolls_back(self) -> None:
+        # 21:30 的排程延遲三小時 -> 00:30，仍應產出 8/10 的報告
+        self.assertEqual(str(self._at("2026-08-11T00:30")), "2026-08-10")
+
+    def test_postmarket_boundary_hour(self) -> None:
+        self.assertEqual(str(self._at("2026-08-11T04:59")), "2026-08-10")
+        self.assertEqual(str(self._at("2026-08-11T05:00")), "2026-08-11")
+
+    def test_premarket_never_rolls_back(self) -> None:
+        # 盤前本來就在清晨執行，回推會直接寫錯日期
+        self.assertEqual(str(self._at("2026-08-11T06:45", "premarket")), "2026-08-11")
+
+
 if __name__ == "__main__":
     unittest.main()

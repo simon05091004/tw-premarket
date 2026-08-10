@@ -4,7 +4,7 @@ on:
   schedule:
     # GitHub Actions 用 UTC。台北 06:45 = UTC 22:45（前一天）
     # 排程常延遲 5-15 分鐘，所以提前觸發，目標 07:00 前完成
-    - cron: "45 22 * * 0-4"   # UTC 週日~週四 = 台北週一~週五
+    - cron: "38 22 * * 0-4"   # UTC 週日~週四 = 台北週一~週五（避開整點/半點壅塞）
   workflow_dispatch:           # 允許手動觸發（補跑用）
     inputs:
       target_date:

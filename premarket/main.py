@@ -57,6 +57,25 @@ SPECS = {
 }
 
 
+POSTMARKET_ROLLOVER_HOUR = 5  # 凌晨 5 點前執行的盤後，視為前一天的場次
+
+
+def _target_date(now: datetime, session: str) -> date:
+    """
+    盤後場次的目標日期。
+
+    GitHub Actions 的排程延遲可達兩小時以上（實測 143 分鐘），
+    21:30 的盤後排程有機會被推過午夜。若直接用執行當下的日期，
+    報告會標成隔天,而隔天的收盤資料當時還不存在 —— 產出一份幾乎全空的報告。
+    凌晨執行時往回算一天,才是那次排程原本要處理的交易日。
+    """
+    if session == "postmarket" and now.hour < POSTMARKET_ROLLOVER_HOUR:
+        shifted = now.date() - timedelta(days=1)
+        log.info("凌晨 %02d:%02d 執行盤後，目標日期回推為 %s", now.hour, now.minute, shifted)
+        return shifted
+    return now.date()
+
+
 def find_prev_trade_date(today: date, max_back: int = 10) -> date | None:
     """
     往回找最近一個有加權指數資料的日期。
@@ -104,7 +123,7 @@ def main() -> int:
     today = (
         datetime.strptime(args.date, "%Y-%m-%d").date()
         if args.date
-        else datetime.now(TPE).date()
+        else _target_date(datetime.now(TPE), args.session)
     )
 
     if not is_trading_day(today):

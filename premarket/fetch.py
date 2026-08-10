@@ -12,9 +12,11 @@ from __future__ import annotations
 import csv
 import io
 import logging
+import time
 from dataclasses import dataclass, field, asdict
 from datetime import date, datetime, timedelta
 from typing import Any
+from urllib.parse import urlparse
 
 import requests
 
@@ -29,25 +31,69 @@ UA = {
 }
 
 
+# 每個網域的最小請求間隔（秒）。證交所建議 3 秒以上，短時間連打會被擋。
+MIN_INTERVAL = {"www.twse.com.tw": 3.0, "isin.twse.com.tw": 3.0}
+DEFAULT_INTERVAL = 0.5
+RETRIES = 3
+_last_request: dict[str, float] = {}
+
+
+def _throttle(url: str) -> None:
+    """同一網域的請求之間強制留間隔；不同網域互不影響。"""
+    host = urlparse(url).netloc
+    gap = MIN_INTERVAL.get(host, DEFAULT_INTERVAL)
+    wait = gap - (time.monotonic() - _last_request.get(host, 0.0))
+    if wait > 0:
+        time.sleep(wait)
+    _last_request[host] = time.monotonic()
+
+
+def _request(method: str, url: str, **kw: Any) -> requests.Response | None:
+    """
+    帶節流與重試的請求。失敗回 None —— 呼叫端一律把 None 當成「這項沒資料」，
+    讓單一資料源掛掉不會拖垮整份報告（既有設計）。
+    """
+    for attempt in range(1, RETRIES + 1):
+        _throttle(url)
+        try:
+            r = requests.request(method, url, headers=UA, timeout=TIMEOUT, **kw)
+            r.raise_for_status()
+            return r
+        except Exception as exc:  # noqa: BLE001
+            if attempt == RETRIES:
+                log.warning("%s %s 失敗（第 %d 次，放棄）: %s", method, url, attempt, exc)
+                return None
+            backoff = 2.0 * attempt
+            log.info("%s %s 失敗（第 %d 次），%.0f 秒後重試: %s", method, url, attempt, backoff, exc)
+            time.sleep(backoff)
+    return None
+
+
 def _get_json(url: str, params: dict | None = None) -> Any | None:
+    r = _request("GET", url, params=params)
+    if r is None:
+        return None
     try:
-        r = requests.get(url, params=params, headers=UA, timeout=TIMEOUT)
-        r.raise_for_status()
         return r.json()
     except Exception as exc:  # noqa: BLE001
-        log.warning("GET %s 失敗: %s", url, exc)
+        log.warning("GET %s 回應非 JSON: %s", url, exc)
         return None
+
+
+def _get_text(url: str, encoding: str = "utf-8") -> str | None:
+    r = _request("GET", url)
+    if r is None:
+        return None
+    r.encoding = encoding
+    return r.text
 
 
 def _post_csv(url: str, data: dict) -> list[list[str]] | None:
-    try:
-        r = requests.post(url, data=data, headers=UA, timeout=TIMEOUT)
-        r.raise_for_status()
-        r.encoding = "big5"
-        return list(csv.reader(io.StringIO(r.text)))
-    except Exception as exc:  # noqa: BLE001
-        log.warning("POST %s 失敗: %s", url, exc)
+    r = _request("POST", url, data=data)
+    if r is None:
         return None
+    r.encoding = "big5"
+    return list(csv.reader(io.StringIO(r.text)))
 
 
 def _num(s: Any) -> float | None:
