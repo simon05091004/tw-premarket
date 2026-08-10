@@ -506,12 +506,18 @@ def fetch_margin_series(trade_dates: list[str], closes_by_date: dict[str, float]
         lambda r: r["指數漲跌"] is not None and r["指數漲跌"] < 0 and r["日增減_億"] > 0
     )
 
+    # 連續段若填滿整個視窗，真實天數可能更長 —— 標記出來，
+    # 否則「連續 10 天」會被當成精確值，實際上是「至少 10 天」。
+    window_capped = max(abs(consecutive), down_up) >= len(series)
+
     return {
         "序列": series,
         "融資連續增減天數": consecutive,
         "指數跌但融資增_連續天數": down_up,
         "最新融資餘額_億": series[-1]["融資餘額_億"],
         "最新日增減_億": last,
+        "序列天數": len(series),
+        "連續天數觸及視窗上限": window_capped,
     }
 
 
@@ -520,7 +526,10 @@ def fetch_margin_series(trade_dates: list[str], closes_by_date: dict[str, float]
 # ---------------------------------------------------------------------------
 
 BASIS_ABNORMAL_POINTS = 150.0
-MARGIN_TREND_DAYS = 30
+# 融資序列只用來數連續天數,不需要長序列。
+# MI_MARGN 是單日端點,每多一天就多一次請求（節流 3 秒）—— 30 天要 100 秒,
+# 逼近 workflow 的 timeout。10 天足以涵蓋絕大多數連續段。
+MARGIN_TREND_DAYS = 10
 
 
 def fetch_basis_series(end: date, closes_by_date: dict[str, float], days: int = 5) -> dict | None:
