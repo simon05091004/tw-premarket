@@ -91,6 +91,29 @@ def find_prev_trade_date(today: date, max_back: int = 10) -> date | None:
     return None
 
 
+def prev_trade_date_from_history(today: date) -> date | None:
+    """
+    後備：從已產出的 payload 檔名反推前一交易日。
+
+    連續問不到加權指數，比起「這幾天全都休市」，更可能是證交所端點故障 ——
+    2026-08-11 盤前就是這樣：12 次請求全回 HTTP 200 加一頁 HTML，整份報告中止。
+    docs/data/ 下每有一個 payload 檔，就代表那天跑成過一份報告,也就是交易日;
+    取最近一個當前一交易日，比直接放棄好。
+
+    這只影響「往回比較」的基準日,不會讓報告多出數字：真的抓不到的資料源
+    仍會各自進 missing,超過半數失敗照樣中止。
+    """
+    dates = []
+    for f in DATA.glob("*payload-*.json"):
+        try:
+            d = date.fromisoformat(f.stem.split("-", 1)[1])
+        except ValueError:
+            continue
+        if d < today:
+            dates.append(d)
+    return max(dates) if dates else None
+
+
 def is_trading_day(today: date) -> bool:
     """今天是否可能開盤。週末直接排除；國定假日交給 workflow 的容錯（多跑一次不會壞）。"""
     return today.weekday() < 5
@@ -132,8 +155,15 @@ def main() -> int:
 
     prev = find_prev_trade_date(today)
     if prev is None:
-        log.error("找不到前一交易日資料，中止。")
-        return 1
+        prev = prev_trade_date_from_history(today)
+        if prev is None:
+            log.error("問不到加權指數，也沒有歷史 payload 可回推前一交易日，中止。")
+            return 1
+        log.warning(
+            "連續多天問不到加權指數（證交所端點可能故障），"
+            "改用最近一份 payload 的日期 %s 當前一交易日。",
+            prev,
+        )
 
     log.info("抓取資料中…")
     if args.session == "postmarket":

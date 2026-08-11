@@ -15,7 +15,7 @@ import logging
 import time
 from dataclasses import dataclass, field, asdict
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlparse
 
 import requests
@@ -48,17 +48,24 @@ def _throttle(url: str) -> None:
     _last_request[host] = time.monotonic()
 
 
-def _request(method: str, url: str, **kw: Any) -> requests.Response | None:
+def _fetch(
+    method: str, url: str, parse: Callable[[requests.Response], Any], **kw: Any
+) -> Any | None:
     """
     帶節流與重試的請求。失敗回 None —— 呼叫端一律把 None 當成「這項沒資料」，
     讓單一資料源掛掉不會拖垮整份報告（既有設計）。
+
+    parse 在重試迴圈「之內」執行，它拋例外就跟連線失敗一樣會重試:
+    證交所忙碌時不是回 5xx，而是回 HTTP 200 加一頁 HTML,raise_for_status()
+    攔不到。原本只在迴圈外解析,這種故障連一次都不會重試 —— 2026-08-11 盤前
+    12 次請求全中，整份報告因為找不到前一交易日而中止。
     """
     for attempt in range(1, RETRIES + 1):
         _throttle(url)
         try:
             r = requests.request(method, url, headers=UA, timeout=TIMEOUT, **kw)
             r.raise_for_status()
-            return r
+            return parse(r)
         except Exception as exc:  # noqa: BLE001
             if attempt == RETRIES:
                 log.warning("%s %s 失敗（第 %d 次，放棄）: %s", method, url, attempt, exc)
@@ -70,30 +77,25 @@ def _request(method: str, url: str, **kw: Any) -> requests.Response | None:
 
 
 def _get_json(url: str, params: dict | None = None) -> Any | None:
-    r = _request("GET", url, params=params)
-    if r is None:
-        return None
-    try:
-        return r.json()
-    except Exception as exc:  # noqa: BLE001
-        log.warning("GET %s 回應非 JSON: %s", url, exc)
-        return None
+    # 注意：證交所「查無資料」是合法 JSON（stat 非 OK）,由各 fetcher 自行判讀,
+    # 不會走到這裡的重試 —— 只有「根本不是 JSON」才算故障。
+    return _fetch("GET", url, lambda r: r.json(), params=params)
 
 
 def _get_text(url: str, encoding: str = "utf-8") -> str | None:
-    r = _request("GET", url)
-    if r is None:
-        return None
-    r.encoding = encoding
-    return r.text
+    def parse(r: requests.Response) -> str:
+        r.encoding = encoding
+        return r.text
+
+    return _fetch("GET", url, parse)
 
 
 def _post_csv(url: str, data: dict) -> list[list[str]] | None:
-    r = _request("POST", url, data=data)
-    if r is None:
-        return None
-    r.encoding = "big5"
-    return list(csv.reader(io.StringIO(r.text)))
+    def parse(r: requests.Response) -> list[list[str]]:
+        r.encoding = "big5"
+        return list(csv.reader(io.StringIO(r.text)))
+
+    return _fetch("POST", url, parse, data=data)
 
 
 def _num(s: Any) -> float | None:

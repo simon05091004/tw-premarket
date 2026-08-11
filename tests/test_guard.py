@@ -21,7 +21,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from premarket import analyze, main as main_mod  # noqa: E402
+from premarket import analyze, fetch, main as main_mod  # noqa: E402
 
 DATE = "2026-08-06"
 GOOD_BRIEF = "## 1. 今日 K 線的形態\n\n" + "測試內容。" * 200  # 遠超過 500 字元門檻
@@ -161,6 +161,111 @@ class TestTargetDate(unittest.TestCase):
     def test_premarket_never_rolls_back(self) -> None:
         # 盤前本來就在清晨執行，回推會直接寫錯日期
         self.assertEqual(str(self._at("2026-08-11T06:45", "premarket")), "2026-08-11")
+
+
+class FakeResponse:
+    """證交所忙碌時的樣子：HTTP 200，但 body 是一頁 HTML。"""
+
+    def __init__(self, body: str, json_ok: bool = False) -> None:
+        self.text = body
+        self.encoding = "utf-8"
+        self._json_ok = json_ok
+
+    def raise_for_status(self) -> None:
+        pass  # 200，狀態碼攔不到
+
+    def json(self):
+        if not self._json_ok:
+            raise ValueError("Expecting value: line 1 column 1 (char 0)")
+        return {"stat": "很抱歉，沒有符合條件的資料!"}
+
+
+class TestNonJsonRetries(unittest.TestCase):
+    """
+    HTTP 200 + 非 JSON 必須重試。
+
+    背景：2026-08-11 盤前 12 次請求全拿到 HTML，但重試只掛在 raise_for_status()
+    上，一次都沒退避重試就放棄，整份報告因為找不到前一交易日而中止。
+    """
+
+    def _run(self, response, fn=lambda: fetch._get_json("https://www.twse.com.tw/x")):
+        """跑一次請求，回傳 (結果, 實際送出的請求次數)。節流與退避都跳過，測試才不用等。"""
+        calls = []
+
+        def fake_request(method, url, **kw):
+            calls.append(url)
+            return response
+
+        with (
+            patch.object(fetch.requests, "request", side_effect=fake_request),
+            patch.object(fetch, "_throttle"),
+            patch.object(fetch.time, "sleep"),
+        ):
+            return fn(), len(calls)
+
+    def test_html_body_is_retried_then_gives_up(self) -> None:
+        result, n = self._run(FakeResponse("<html>系統忙碌</html>"))
+        self.assertIsNone(result, "重試用盡後仍要回 None，讓呼叫端當成這項沒資料")
+        self.assertEqual(n, fetch.RETRIES, "非 JSON 的 200 必須用滿重試次數")
+
+    def test_valid_json_is_not_retried(self) -> None:
+        # 「查無資料」是合法 JSON，由各 fetcher 判讀 stat，不該浪費重試次數
+        result, n = self._run(FakeResponse("{}", json_ok=True))
+        self.assertEqual(n, 1)
+        self.assertNotEqual(result, None)
+
+    def test_text_and_csv_paths_also_retry(self) -> None:
+        def boom(r):
+            raise ValueError("解析失敗")
+
+        _, n = self._run(
+            FakeResponse("x"), fn=lambda: fetch._fetch("GET", "https://www.twse.com.tw/x", boom)
+        )
+        self.assertEqual(n, fetch.RETRIES)
+
+
+class TestPrevTradeDateFallback(unittest.TestCase):
+    """問不到加權指數時，改用歷史 payload 的日期回推前一交易日。"""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.data = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+    def _write(self, *names: str) -> None:
+        for n in names:
+            (self.data / n).write_text("{}", encoding="utf-8")
+
+    def _prev(self, today: str):
+        from datetime import date as _date
+
+        with patch.object(main_mod, "DATA", self.data):
+            return main_mod.prev_trade_date_from_history(_date.fromisoformat(today))
+
+    def test_picks_latest_before_today(self) -> None:
+        self._write(
+            "payload-2026-08-07.json",
+            "payload-2026-08-10.json",
+            "postpayload-2026-08-10.json",
+            "etf-codes.json",  # 不是 payload，不能被當成日期
+        )
+        self.assertEqual(str(self._prev("2026-08-11")), "2026-08-10")
+
+    def test_ignores_today_and_future(self) -> None:
+        # 盤前自己那份 payload 是後寫的，但補跑舊日期時可能已經存在
+        self._write("payload-2026-08-10.json", "payload-2026-08-11.json")
+        self.assertEqual(str(self._prev("2026-08-11")), "2026-08-10")
+
+    def test_no_history_returns_none(self) -> None:
+        self.assertIsNone(self._prev("2026-08-11"), "沒有歷史檔案時要回 None，讓主流程中止")
+
+    def test_main_aborts_when_both_sources_fail(self) -> None:
+        with (
+            patch.object(main_mod, "DATA", self.data),
+            patch.object(main_mod.fetch, "fetch_taiex_ohlc", return_value=None),
+        ):
+            sys.argv = ["premarket.main", "--session", "postmarket", "--date", DATE]
+            self.assertEqual(main_mod.main(), 1)
 
 
 if __name__ == "__main__":
