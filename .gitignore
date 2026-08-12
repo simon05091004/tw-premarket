@@ -14,3 +14,8 @@ __pycache__/
 
 # Claude Code 本機設定
 .claude/
+
+# 選股程式的資料與快取（本機重跑就有，2MB）
+# 注意：data/cache/statements.csv 要跨次執行累積才算得出 EPS 年增率，
+# 之後如果把選股掛上 Actions，這個快取反而需要被 commit 才會累積。
+data/
