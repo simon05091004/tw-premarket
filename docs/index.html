@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>台股盤前 · 2026-08-12</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#15171C">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="台股">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Serif+TC:wght@400;600&family=Noto+Sans+TC:wght@400;500&display=swap" rel="stylesheet">
@@ -25,6 +31,12 @@
 
   /* ---- 報頭 ---- */
   header { border-bottom:2px solid var(--ink); padding-bottom:.75rem; }
+  .switch { margin-top:.6rem; font-family:var(--sans); font-size:.8rem; }
+  .switch a {
+    display:inline-block; padding:.35rem .7rem; border:1px solid var(--rule);
+    border-radius:999px; color:var(--muted); text-decoration:none;
+  }
+  .switch a:active { background:var(--ink); color:var(--paper); }
   .eyebrow {
     font-family:var(--mono); font-size:.7rem; letter-spacing:.18em;
     text-transform:uppercase; color:var(--muted);
@@ -112,8 +124,18 @@
   <header>
     <div class="eyebrow">台股盤前 · Pre-market</div>
     <h1>2026-08-12</h1>
-    <div class="sub">產生於 2026-08-12 07:22 · 前一交易日 2026-08-11</div>
+    <div class="sub">產生於 2026-08-12 13:26 · 前一交易日 2026-08-11</div>
+    <div class="switch"><a href="latest-postmarket.html">看最新盤後籌碼 →</a></div>
   </header>
+
+  <script>
+    // 註冊失敗（例如用 file:// 開啟）不影響閱讀，靜默略過即可
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("sw.js").catch(function () {});
+      });
+    }
+  </script>
 
   <ol class='track'><li class=''><span class='t'>08-11 13:30</span><span class='lb'>台股收盤</span><span class='v flat'>45,121</span></li><li class=''><span class='t'>08-11 15:00</span><span class='lb'>夜盤開始</span><span class='v flat'></span></li><li class=''><span class='t'>08-11</span><span class='lb'>美股收盤</span><span class='v up'>費半 +0.87%</span></li><li class=''><span class='t'>08-12 05:00</span><span class='lb'>夜盤結束</span><span class='v flat'>45,279</span></li><li class='now'><span class='t'>08-12 07:00</span><span class='lb'>現在</span><span class='v up'>價差 +158</span></li></ol>
 
