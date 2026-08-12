@@ -144,7 +144,13 @@ TEMPLATE = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>台股盤前 · {date}</title>
+<title>{title} · {date}</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#15171C">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="台股">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Serif+TC:wght@400;600&family=Noto+Sans+TC:wght@400;500&display=swap" rel="stylesheet">
@@ -166,6 +172,12 @@ TEMPLATE = """<!doctype html>
 
   /* ---- 報頭 ---- */
   header {{ border-bottom:2px solid var(--ink); padding-bottom:.75rem; }}
+  .switch {{ margin-top:.6rem; font-family:var(--sans); font-size:.8rem; }}
+  .switch a {{
+    display:inline-block; padding:.35rem .7rem; border:1px solid var(--rule);
+    border-radius:999px; color:var(--muted); text-decoration:none;
+  }}
+  .switch a:active {{ background:var(--ink); color:var(--paper); }}
   .eyebrow {{
     font-family:var(--mono); font-size:.7rem; letter-spacing:.18em;
     text-transform:uppercase; color:var(--muted);
@@ -251,10 +263,20 @@ TEMPLATE = """<!doctype html>
 <body>
 <div class="wrap">
   <header>
-    <div class="eyebrow">台股盤前 · Pre-market</div>
+    <div class="eyebrow">{eyebrow}</div>
     <h1>{date}</h1>
     <div class="sub">產生於 {generated} · 前一交易日 {prev_date}</div>
+    <div class="switch"><a href="{other_url}">{other_label} →</a></div>
   </header>
+
+  <script>
+    // 註冊失敗（例如用 file:// 開啟）不影響閱讀，靜默略過即可
+    if ("serviceWorker" in navigator) {{
+      window.addEventListener("load", function () {{
+        navigator.serviceWorker.register("sw.js").catch(function () {{}});
+      }});
+    }}
+  </script>
 
   {timeline}
 
@@ -275,7 +297,28 @@ TEMPLATE = """<!doctype html>
 """
 
 
-def render(payload: dict, brief_md: str) -> str:
+SESSION_CHROME = {
+    "premarket": {
+        "title": "台股盤前",
+        "eyebrow": "台股盤前 · Pre-market",
+        "other_url": "latest-postmarket.html",
+        "other_label": "看最新盤後籌碼",
+    },
+    "postmarket": {
+        "title": "台股盤後",
+        "eyebrow": "台股盤後 · Post-market",
+        "other_url": "index.html",
+        "other_label": "看最新盤前分析",
+    },
+}
+
+
+def render(payload: dict, brief_md: str, session: str = "premarket") -> str:
+    """
+    session 決定標題與跨頁連結。裝成 PWA 之後只有一個入口，
+    兩份報告若不能互相跳轉，等於只看得到其中一份。
+    """
+    chrome = SESSION_CHROME.get(session, SESSION_CHROME["premarket"])
     us = payload.get("us_market", {}) or {}
     order = [
         "道瓊", "那斯達克", "標普500", "費城半導體",
@@ -291,7 +334,9 @@ def render(payload: dict, brief_md: str) -> str:
     )
 
     return TEMPLATE.format(
-        date=payload.get("target_session", ""),
+        **chrome,
+        # 盤前用 target_session，盤後用 session_date
+        date=payload.get("target_session") or payload.get("session_date", ""),
         prev_date=payload.get("prev_trade_date", "—"),
         generated=datetime.now().astimezone().strftime("%Y-%m-%d %H:%M"),
         up=UP,

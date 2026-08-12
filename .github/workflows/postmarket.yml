@@ -61,3 +61,19 @@ jobs:
           git diff --staged --quiet || git commit -m "盤後籌碼分析 $(date +%Y-%m-%d)"
           git pull --rebase
           git push
+
+      # LINE 通知。沒設 secret 的人（例如 fork 的人）自動略過，不會讓 workflow 失敗。
+      # 用 broadcast 而非 push：不需要知道自己的 userId，發給所有加好友的人即可。
+      - name: LINE 通知
+        if: success() && env.LINE_TOKEN != ''
+        env:
+          LINE_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          PAGES_URL: ${{ vars.PAGES_URL }}
+        run: |
+          MSG="台股盤後籌碼 $(date +%m/%d) 已更新
+          ${PAGES_URL:-https://github.com/${{ github.repository }}}/latest-postmarket.html"
+          curl -sS -X POST https://api.line.me/v2/bot/message/broadcast \
+            -H "Authorization: Bearer $LINE_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg t "$MSG" '{messages:[{type:"text",text:$t}]}')" \
+            -o /dev/null -w "LINE 回應碼 %{http_code}\n"

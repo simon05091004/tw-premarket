@@ -217,7 +217,7 @@ def main() -> int:
         f"# {spec.title} {today.isoformat()}\n\n{brief_md}\n", encoding="utf-8"
     )
 
-    html_doc = render.render(payload_dict, brief_md)
+    html_doc = render.render(payload_dict, brief_md, session=args.session)
     (DOCS / f"{spec.out_stem}-{today.isoformat()}.html").write_text(html_doc, encoding="utf-8")
     (DOCS / spec.latest_html).write_text(html_doc, encoding="utf-8")  # 最新一份
 
