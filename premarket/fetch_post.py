@@ -684,6 +684,7 @@ class PostPayload:
     margin: dict | None = None
     margin_trend: dict | None = None
     basis_trend: dict | None = None
+    short_watchlist: dict | None = None
     taifex_tx: dict | None = None
     tpex_index: dict | None = None
     derived: dict = field(default_factory=dict)
@@ -727,6 +728,11 @@ def build_postmarket_payload(session_date: date, prev_date: date | None = None) 
     p.margin_trend = fetch_margin_series(
         sorted(closes_by_date)[-MARGIN_TREND_DAYS:], closes_by_date
     )
+
+    # 隔日觀察清單：個股層級的篩選，資料量最大（每天一次全市場行情），放最後
+    from .shortlist import build_short_watchlist
+
+    p.short_watchlist = build_short_watchlist(sorted(closes_by_date))
 
     d: dict[str, Any] = {}
     if p.taiex_ohlc:
@@ -837,6 +843,7 @@ def build_postmarket_payload(session_date: date, prev_date: date | None = None) 
         ("融資餘額", p.margin),
         ("融資連續趨勢", p.margin_trend),
         ("期現價差5日", p.basis_trend),
+        ("隔日觀察清單", p.short_watchlist),
         ("櫃買指數", p.tpex_index),
     ]:
         if not val:

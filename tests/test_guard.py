@@ -270,3 +270,50 @@ class TestPrevTradeDateFallback(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestShortWatchlist(unittest.TestCase):
+    """篩選邏輯：命中判定與「不可先賣後買排在後面」的排序。"""
+
+    def _quotes(self, close, open_, high, vol):
+        return {"name": "測試股", "open": open_, "high": high, "low": min(open_, close),
+                "close": close, "volume": vol, "turnover": vol * close}
+
+    def _run(self, today_bar, hist_close, hist_vol, foreign_net, eligible):
+        from premarket import shortlist as sl
+
+        dates = [f"2026-07-{d:02d}" for d in range(20, 30)]
+        quotes = {
+            ds: {"9999": self._quotes(hist_close, hist_close, hist_close, hist_vol)}
+            for ds in dates[:-1]
+        }
+        quotes[dates[-1]] = {"9999": today_bar}
+        with (
+            patch.object(sl, "fetch_daily_quotes", side_effect=lambda d: quotes[d.isoformat()]),
+            patch.object(sl, "fetch_foreign_net", return_value={"9999": foreign_net}),
+            patch.object(sl, "fetch_daytrade_eligibility", return_value={"9999": eligible}),
+            patch.object(sl, "fetch_short_margin", return_value={}),
+        ):
+            return sl.build_short_watchlist(dates)
+
+    def test_volume_spike_with_black_candle_hits(self) -> None:
+        bar = self._quotes(close=95.0, open_=100.0, high=101.0, vol=3_000_000)
+        r = self._run(bar, 100.0, 1_000_000, foreign_net=-5000, eligible=True)
+        hits = r["清單"][0]["命中條件"]
+        self.assertIn("量價背離", hits)   # 量比 3.0 且收黑
+        self.assertIn("籌碼轉弱", hits)   # 外資連兩日賣超
+
+    def test_quiet_volume_does_not_hit(self) -> None:
+        bar = self._quotes(close=99.0, open_=100.0, high=100.0, vol=900_000)
+        r = self._run(bar, 100.0, 1_000_000, foreign_net=8000, eligible=True)
+        self.assertEqual(r["清單"], [], "量能與籌碼都正常時不應進清單")
+
+    def test_non_shortable_sorted_last(self) -> None:
+        from premarket import shortlist as sl
+
+        rows = [
+            {"可當沖先賣後買": False, "命中數": 3, "量比": 9.0},
+            {"可當沖先賣後買": True, "命中數": 1, "量比": 1.6},
+        ]
+        rows.sort(key=lambda x: (not x["可當沖先賣後買"], -x["命中數"], -(x["量比"] or 0)))
+        self.assertTrue(rows[0]["可當沖先賣後買"], "不可先賣後買者必須排在後面")
