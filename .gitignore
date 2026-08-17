@@ -18,4 +18,9 @@ __pycache__/
 # 選股程式的資料與快取（本機重跑就有，2MB）
 # 注意：data/cache/statements.csv 要跨次執行累積才算得出 EPS 年增率，
 # 之後如果把選股掛上 Actions，這個快取反而需要被 commit 才會累積。
-data/
+#
+# 開頭的斜線只匹配 repo 根目錄的 data/。
+# 寫成 data/ 會連 docs/data/ 一起擋掉 —— 那裡放的是每日 payload，
+# 被擋掉時報告照樣產出，但 load_prev_payload() 會一直讀到舊的那份，
+# 沒有任何錯誤訊息。
+/data/
