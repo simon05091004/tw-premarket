@@ -109,7 +109,9 @@ def _timeline(payload: dict) -> str:
     sox = us.get("費城半導體", {})
     tx_night = d.get("夜盤台指期收盤")
     spot = d.get("加權指數收盤")
-    basis = d.get("夜盤期現價差")
+    # 夜盤與現貨不同時段，兩者相減不是價差 —— 期貨端隔夜自己走了多少
+    # （對日盤收盤）才是這一格要講的事。
+    night_chg = d.get("夜盤較日盤收盤漲跌點")
 
     # 每一格都標日期：夜盤橫跨兩個日期,補跑舊報告時尤其不能只寫時間。
     prev_d = _mmdd(payload.get("prev_trade_date"))
@@ -124,8 +126,9 @@ def _timeline(payload: dict) -> str:
         (us_d, "", "美股收盤", f"費半 {_fmt(sox.get('change_pct'), 2, True)}%" if sox else "—",
          sox.get("change_pct") if sox else None),
         (today_d, "05:00", "夜盤結束", _fmt(tx_night, 0) if tx_night else "—", None),
-        (today_d, "07:00", "現在", (f"價差 {_fmt(basis, 0, True)}" if basis is not None else "—"),
-         basis),
+        (today_d, "07:00", "現在",
+         (f"夜盤 {_fmt(night_chg, 0, True)}" if night_chg is not None else "—"),
+         night_chg),
     ]
     items = []
     for i, (day, t, label, val, tone) in enumerate(stops):

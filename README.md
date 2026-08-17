@@ -20,7 +20,8 @@ pip install -r requirements.txt
 python -m premarket.main --dry-run
 ```
 
-`--dry-run` 會印出 `derived` 區塊（均線、期現價差、ADR 隱含價）。
+`--dry-run` 會印出 `derived` 區塊（均線與 5/10/20 日乖離率、日盤期現價差、
+夜盤自身漲跌、ADR 隱含價與對台積電現貨的溢價、VIX 水位分級、外資投信鏡像對峙）。
 **這一步一定要先跑通再接 API**，否則你會付錢請模型分析一堆 null。
 
 正式執行：
@@ -96,7 +97,7 @@ docs/
 | 來源 | 取得內容 | 風險 |
 |---|---|---|
 | Yahoo Finance (yfinance) | 美股四大指數、費半、ADR、油價、匯率、公債殖利率 | 非官方 API，偶爾改版 |
-| TWSE RWD JSON | 加權指數 OHLC、成交量值、三大法人現貨、融資餘額 | 端點格式偶爾調整 |
+| TWSE RWD JSON | 加權指數 OHLC、成交量值、三大法人現貨、融資餘額、台積電收盤 | 端點格式偶爾調整 |
 | TAIFEX CSV | 台指期日盤／夜盤、三大法人期貨未平倉 | Big5 編碼、欄位名會微調 |
 
 **這三家都不保證 API 穩定。** 所以 `fetch.py` 的每個函式都獨立失敗，

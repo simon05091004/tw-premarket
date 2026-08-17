@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from .fetch import (  # 共用既有工具，不重複實作
+    MIRROR_RATIO,
     _get_json,
     _get_text,
     _num,
@@ -32,6 +33,7 @@ from .fetch import (  # 共用既有工具，不重複實作
     fetch_institutional_cash,
     fetch_margin,
     fetch_taifex_tx,
+    fetch_futures_oi_series,
     fetch_taiex_ohlc,
     fetch_taiex_turnover,
 )
@@ -225,64 +227,6 @@ def fetch_foreign_top_stocks(d: date, top_n: int = 15) -> dict | None:
 # ---------------------------------------------------------------------------
 # 期貨未平倉「變化量」—— 水位是狀態，增減才是動作
 # ---------------------------------------------------------------------------
-
-
-def fetch_futures_oi_series(end: date, days: int = 6) -> list[dict] | None:
-    """
-    抓一段區間的三大法人台指期未平倉，讓下游能算出單日增減。
-    外資空單 8.7 萬口是水位；今天加空 3,000 口還是回補 5,000 口，才是訊號。
-    """
-    start = end - timedelta(days=days)
-    rows = _post_csv(
-        TAIFEX_INST,
-        {
-            "queryStartDate": start.strftime("%Y/%m/%d"),
-            "queryEndDate": end.strftime("%Y/%m/%d"),
-            "commodityId": "TXF",
-        },
-    )
-    if not rows or len(rows) < 2:
-        return None
-
-    header = [c.strip() for c in rows[0]]
-    try:
-        i_date = next(i for i, h in enumerate(header) if "日期" in h)
-        i_ident = next(i for i, h in enumerate(header) if "身份別" in h or "身分別" in h)
-    except StopIteration:
-        return None
-
-    i_net = None
-    for i, h in enumerate(header):
-        if "未平倉" in h and "淨額" in h and "口數" in h:
-            i_net = i
-    if i_net is None:
-        lot_cols = [i for i, h in enumerate(header) if h == "口數"]
-        i_net = lot_cols[-1] if lot_cols else None
-    if i_net is None:
-        return None
-
-    by_date: dict[str, dict] = {}
-    for r in rows[1:]:
-        if len(r) <= max(i_date, i_ident, i_net):
-            continue
-        ds = r[i_date].strip().replace("/", "-")
-        ident = r[i_ident].strip()
-        val = _num(r[i_net])
-        if val is None:
-            continue
-        entry = by_date.setdefault(ds, {"date": ds})
-        for key, label in (("外資", "外資"), ("投信", "投信"), ("自營", "自營商")):
-            if ident.startswith(key):
-                entry[f"{label}淨未平倉口數"] = val
-
-    series = sorted(by_date.values(), key=lambda x: x["date"])
-    # 補上單日變化
-    for i in range(1, len(series)):
-        for label in ("外資", "投信", "自營商"):
-            k = f"{label}淨未平倉口數"
-            if k in series[i] and k in series[i - 1]:
-                series[i][f"{label}單日增減"] = round(series[i][k] - series[i - 1][k])
-    return series or None
 
 
 # ---------------------------------------------------------------------------
@@ -793,6 +737,16 @@ def build_postmarket_payload(session_date: date, prev_date: date | None = None) 
                 k = f"{label}{suffix}"
                 if k in last:
                     d[k] = last[k]
+        foreign, trust = last.get("外資淨未平倉口數"), last.get("投信淨未平倉口數")
+        if foreign is not None and trust is not None:
+            # 「方向相反且量級接近」的門檻定在程式碼裡（見 fetch.MIRROR_RATIO），
+            # 交給模型自己判斷「接近」的話，同一組數字每天可以講出不同結論。
+            d["外資投信淨部位合計口數"] = round(foreign + trust)
+            big = max(abs(foreign), abs(trust))
+            if big:
+                ratio = round(min(abs(foreign), abs(trust)) / big, 2)
+                d["外資投信量級比"] = ratio
+                d["外資投信鏡像對峙"] = bool(foreign * trust < 0 and ratio >= MIRROR_RATIO)
 
     day_s = (p.taifex_tx or {}).get("day_session") or {}
     if day_s.get("close") and d.get("加權指數收盤"):
