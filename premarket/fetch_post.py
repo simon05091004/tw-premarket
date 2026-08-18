@@ -372,6 +372,9 @@ def fetch_foreign_ex_etf(d: date, top_n: int = 10) -> dict | None:
                  "net_amount_yi": round(amt / 1e8, 2)}
             )
 
+    buy_rows = [r for r in stock_rows if r["net_amount_yi"] > 0]
+    sell_rows = [r for r in stock_rows if r["net_amount_yi"] < 0]
+
     cash = fetch_institutional_cash(d) or {}
     total_yi = cash.get("外資及陸資買賣超_億")
     etf_yi, stock_yi = round(etf_amt / 1e8, 2), round(stock_amt / 1e8, 2)
@@ -387,12 +390,25 @@ def fetch_foreign_ex_etf(d: date, top_n: int = 10) -> dict | None:
         ),
         "排除ETF後賣超前N": stock_rows[:top_n],
         "排除ETF後買超前N": list(reversed(stock_rows[-top_n:])),
+        # 前 N 名只是分布的頭尾。沒有這兩個合計與家數，「買超前五加起來比
+        # 賣超前十還多」會被讀成單位錯誤 —— 實際上賣超是由更長的尾巴構成的。
+        "排除ETF後買超合計_億": round(sum(r["net_amount_yi"] for r in buy_rows), 2),
+        "排除ETF後賣超合計_億": round(sum(r["net_amount_yi"] for r in sell_rows), 2),
+        "排除ETF後買超家數": len(buy_rows),
+        "排除ETF後賣超家數": len(sell_rows),
         "換算說明": "ETF/個股金額為買賣超股數×當日收盤價之近似值；總額取自 BFI82U",
     }
     # 對帳：換算總和應接近權威總額，差太多代表欄位或名單取錯
     if total_yi is not None:
         drift = abs((etf_yi + stock_yi) - total_yi)
         out["換算與總額差額_億"] = round((etf_yi + stock_yi) - total_yi, 2)
+        # 佔比與門檻一起給：只寫「差額 10.93 億、約 9.1%」，讀者無從得知
+        # 分母是誰、9.1% 算不算正常。
+        out["換算與總額差額佔總額_pct"] = (
+            round(drift / abs(total_yi) * 100, 1) if total_yi else None
+        )
+        out["換算誤差門檻_pct"] = 15.0
+        out["換算誤差在門檻內"] = bool(total_yi and drift <= abs(total_yi) * 0.15)
         if drift > abs(total_yi) * 0.15 + 20:
             log.warning("ETF 拆分換算與 BFI82U 總額差 %.2f 億，請檢查欄位", drift)
     return out
@@ -561,6 +577,77 @@ def fetch_basis_series(end: date, closes_by_date: dict[str, float], days: int = 
     }
 
 
+def _signed(pct_cell: str, sign_cell: str) -> float | None:
+    """
+    證交所指數表的漲跌方向在 HTML 欄位裡（<p style='color:green'>-</p>），
+    漲跌點數欄本身不帶正負號。方向一律從顏色欄取，不靠數字欄自己帶符號。
+    """
+    v = _num(pct_cell)
+    if v is None:
+        return None
+    sign = _HTML_TAG.sub("", str(sign_cell)).strip()
+    return -abs(v) if sign == "-" else abs(v)
+
+
+# 影響超過這麼多指數點才值得在報告裡提。門檻用點數而非百分比：期現價差是用
+# 點數在看的，兩者要能直接相減。證交所的漲跌百分比只到小數第 2 位，
+# 換算成點數的解析度約 4.5 點，10 點是可靠分辨得出來的下限。
+DIVIDEND_DRAG_POINTS = 10.0
+
+
+def fetch_dividend_drag(d: date) -> dict | None:
+    """
+    當日除息對加權指數的影響 —— 用報酬指數與價格指數的落差直接量出來。
+
+    報酬指數把配息加回去，價格指數沒有。同一天兩者的漲跌幅差多少，
+    就是除息機械性壓低指數的幅度，不需要知道任何一檔的權重或發行股數。
+
+    這件事在 8 月（除息旺季）特別要緊：除息會同步壓低現貨與期貨，
+    看起來像逆價差擴大，但那是配息造成的，不是空方定價。
+    """
+    js = _get_json(
+        TWSE_MI_INDEX, {"date": d.strftime("%Y%m%d"), "type": "IND", "response": "json"}
+    )
+    if not js:
+        return None
+    want = {"發行量加權股價指數": "價格指數", "發行量加權股價報酬指數": "報酬指數"}
+    got: dict[str, dict] = {}
+    for t in js.get("tables", []) or []:
+        fields = [str(f) for f in (t.get("fields") or [])]
+        if "漲跌百分比(%)" not in fields:
+            continue
+        i_pct = fields.index("漲跌百分比(%)")
+        i_sign = fields.index("漲跌(+/-)") if "漲跌(+/-)" in fields else None
+        i_close = fields.index("收盤指數") if "收盤指數" in fields else None
+        for r in t.get("data") or []:
+            label = str(r[0]).strip()
+            if label in want and len(r) > i_pct:
+                got[want[label]] = {
+                    "收盤": _num(r[i_close]) if i_close is not None else None,
+                    "漲跌_pct": _signed(r[i_pct], r[i_sign] if i_sign is not None else ""),
+                }
+    if "價格指數" not in got or "報酬指數" not in got:
+        return None
+    price, total = got["價格指數"], got["報酬指數"]
+    if price["漲跌_pct"] is None or total["漲跌_pct"] is None:
+        return None
+    drag_pct = round(total["漲跌_pct"] - price["漲跌_pct"], 2)
+    close = price["收盤"]
+    prev = close / (1 + price["漲跌_pct"] / 100) if close and price["漲跌_pct"] != -100 else None
+    return {
+        "價格指數漲跌_pct": price["漲跌_pct"],
+        "報酬指數漲跌_pct": total["漲跌_pct"],
+        "除息影響_pct": drag_pct,
+        "除息影響點數": round(prev * drag_pct / 100, 2) if prev else None,
+        "有顯著除息": bool(prev and prev * drag_pct / 100 >= DIVIDEND_DRAG_POINTS),
+        "門檻_點": DIVIDEND_DRAG_POINTS,
+        "說明": (
+            "報酬指數漲跌% − 價格指數漲跌% = 當日配息對指數的機械性影響；"
+            "來源百分比只到小數第 2 位，點數解析度約 ±5 點"
+        ),
+    }
+
+
 def fetch_tpex_index(d: date) -> dict | None:
     """
     櫃買指數（OHLC + 漲跌）與當日成交量值。
@@ -628,6 +715,7 @@ class PostPayload:
     margin: dict | None = None
     margin_trend: dict | None = None
     basis_trend: dict | None = None
+    dividend_drag: dict | None = None
     short_watchlist: dict | None = None
     taifex_tx: dict | None = None
     tpex_index: dict | None = None
@@ -643,41 +731,12 @@ def _sma(values: list[float], n: int) -> float | None:
     return round(sum(vals[-n:]) / n, 2) if len(vals) >= n else None
 
 
-def build_postmarket_payload(session_date: date, prev_date: date | None = None) -> PostPayload:
-    p = PostPayload(
-        generated_at=datetime.now().astimezone().isoformat(timespec="seconds"),
-        session_date=session_date.isoformat(),
-        prev_trade_date=prev_date.isoformat() if prev_date else None,
-    )
-
-    p.taiex_ohlc = fetch_taiex_ohlc(session_date, lookback=60)  # 盤後 prompt 第 7 節要 60MA
-    p.taiex_turnover = fetch_taiex_turnover(session_date)
-    p.sector_indices = fetch_sector_indices(session_date)
-    p.market_breadth = fetch_market_breadth(session_date)
-    p.institutional_cash = fetch_institutional_cash(session_date)
-    p.futures_oi_series = fetch_futures_oi_series(session_date)
-    p.foreign_top_stocks = fetch_foreign_top_stocks(session_date)
-    p.taifex_tx = fetch_taifex_tx(session_date)
-    p.margin = fetch_margin(session_date)   # 21:00 後才會有當日資料
-    p.tpex_index = fetch_tpex_index(session_date)
-
-    # 三個趨勢型指標：都以 K 棒日期為準重抓重算，不寫狀態檔，補跑結果一致
-    closes_by_date = {
-        b["date"]: b["close"]
-        for b in (p.taiex_ohlc or [])
-        if b.get("close") is not None
-    }
-    p.foreign_ex_etf = fetch_foreign_ex_etf(session_date)
-    p.basis_trend = fetch_basis_series(session_date, closes_by_date)
-    p.margin_trend = fetch_margin_series(
-        sorted(closes_by_date)[-MARGIN_TREND_DAYS:], closes_by_date
-    )
-
-    # 隔日觀察清單：個股層級的篩選，資料量最大（每天一次全市場行情），放最後
-    from .shortlist import build_short_watchlist
-
-    p.short_watchlist = build_short_watchlist(sorted(closes_by_date))
-
+def _derive_post(p: PostPayload) -> dict[str, Any]:
+    """
+    盤後衍生欄位。與盤前的 _derive 一樣抽成純函式（不碰網路）：
+    這裡的每一條都是判斷 —— 均線排列、雜訊門檻、價差常態方向 ——
+    判斷寫錯不會拋例外，只會在報告裡變成一句講得很篤定的錯話，只有測試攔得住。
+    """
     d: dict[str, Any] = {}
     if p.taiex_ohlc:
         bars = [b for b in p.taiex_ohlc if b.get("close") is not None]
@@ -703,10 +762,20 @@ def build_postmarket_payload(session_date: date, prev_date: date | None = None) 
                 d["開盤即最高"] = abs(o - h) < 1
             for n in (5, 10, 20, 60):
                 d[f"{n}日均線"] = _sma(closes, n)
-            ma5, ma10, ma20 = d.get("5日均線"), d.get("10日均線"), d.get("20日均線")
+            ma5, ma10, ma20, ma60 = (
+                d.get("5日均線"), d.get("10日均線"), d.get("20日均線"), d.get("60日均線")
+            )
             if None not in (ma5, ma10, ma20):
                 d["均線多頭排列"] = ma5 > ma10 > ma20
                 d["指數對20日均線乖離率"] = round((spot - ma20) / ma20 * 100, 2)
+            if ma20 is not None and ma60 is not None:
+                # 5>10>20 只是短天期的排列。20MA 若還在 60MA 之下，中期結構
+                # 就還沒轉多 —— 只講「多頭排列成立」會蓋掉這件事。
+                d["20日均線在60日均線之上"] = ma20 > ma60
+                d["完整多頭排列_含60MA"] = bool(
+                    None not in (ma5, ma10) and ma5 > ma10 > ma20 > ma60
+                )
+                d["指數對60日均線乖離率"] = round((spot - ma60) / ma60 * 100, 2)
 
             # 近 20 日高低點：K 棒現在有 60 根（供 60MA），這裡只取最後 20 根,
             # 否則「近 20 日」會變成「近 60 日」。prompt 第 7 節要用。
@@ -737,6 +806,12 @@ def build_postmarket_payload(session_date: date, prev_date: date | None = None) 
                 k = f"{label}{suffix}"
                 if k in last:
                     d[k] = last[k]
+        for label in ("外資", "投信", "自營商"):
+            lots, chg = last.get(f"{label}淨未平倉口數"), last.get(f"{label}單日增減")
+            if lots and chg is not None:
+                # 396 口在 83,000 口的水位上是 0.48% —— 沒有分母就會被寫成
+                # 「回補」當訊號用。語氣校準規則要的就是這個百分比。
+                d[f"{label}單日增減佔水位_pct"] = round(abs(chg) / abs(lots) * 100, 2)
         foreign, trust = last.get("外資淨未平倉口數"), last.get("投信淨未平倉口數")
         if foreign is not None and trust is not None:
             # 「方向相反且量級接近」的門檻定在程式碼裡（見 fetch.MIRROR_RATIO），
@@ -768,9 +843,16 @@ def build_postmarket_payload(session_date: date, prev_date: date | None = None) 
             )
 
     if p.foreign_ex_etf:
-        for k in ("外資買賣超總額_億", "排除ETF後淨額_億", "ETF部分_億_換算", "ETF佔比_pct"):
+        for k in ("外資買賣超總額_億", "排除ETF後淨額_億", "ETF部分_億_換算", "ETF佔比_pct",
+                  "排除ETF後買超合計_億", "排除ETF後賣超合計_億",
+                  "排除ETF後買超家數", "排除ETF後賣超家數",
+                  "換算與總額差額_億", "換算與總額差額佔總額_pct", "換算誤差在門檻內"):
             if p.foreign_ex_etf.get(k) is not None:
                 d[k] = p.foreign_ex_etf[k]
+
+    if p.dividend_drag:
+        for k in ("除息影響_pct", "除息影響點數", "有顯著除息"):
+            d[k] = p.dividend_drag[k]
 
     if p.margin_trend:
         d["融資連續增減天數"] = p.margin_trend["融資連續增減天數"]
@@ -782,8 +864,70 @@ def build_postmarket_payload(session_date: date, prev_date: date | None = None) 
         for k in ("當日價差", "前日價差", "當日變動", "5日均價差", "對5日均偏離",
                   "跨越正負號", "異常"):
             d[f"期現價差_{k}"] = p.basis_trend[k]
+        vals = [x["價差"] for x in p.basis_trend.get("序列", [])]
+        if len(vals) >= 2:
+            # 「常態」一律用今天以前的日子算。5 日均價差把今天也算進去，
+            # 今天若是個大負值，均值就被自己拉成負的 —— 再拿這個均值說
+            # 「逆價差本來就是常態」，等於用今天證明今天不異常。
+            prior = vals[:-1]
+            avg_prior = round(sum(prior) / len(prior), 2)
+            d["期現價差_今日前均價差"] = avg_prior
+            d["期現價差_今日前天數"] = len(prior)
+            d["期現價差_今日前逆價差天數"] = sum(1 for v in prior if v < 0)
+            d["期現價差_今日前最大"] = max(prior)
+            d["期現價差_今日前最小"] = min(prior)
+            d["期現價差_常態方向"] = (
+                "逆價差" if avg_prior < 0 else ("正價差" if avg_prior > 0 else "持平")
+            )
+            d["期現價差_今日為常態方向"] = bool(
+                vals[-1] < 0 if avg_prior < 0 else (vals[-1] > 0 if avg_prior > 0 else True)
+            )
+            # 今天有沒有走出前幾日的區間 —— 這比「跨越正負號」更能分辨
+            # 「回到常態」與「真的走到沒去過的地方」。
+            d["期現價差_今日走出前期區間"] = bool(
+                vals[-1] > max(prior) or vals[-1] < min(prior)
+            )
 
-    p.derived = d
+    return d
+
+
+def build_postmarket_payload(session_date: date, prev_date: date | None = None) -> PostPayload:
+    p = PostPayload(
+        generated_at=datetime.now().astimezone().isoformat(timespec="seconds"),
+        session_date=session_date.isoformat(),
+        prev_trade_date=prev_date.isoformat() if prev_date else None,
+    )
+
+    p.taiex_ohlc = fetch_taiex_ohlc(session_date, lookback=60)  # 盤後 prompt 第 7 節要 60MA
+    p.taiex_turnover = fetch_taiex_turnover(session_date)
+    p.sector_indices = fetch_sector_indices(session_date)
+    p.market_breadth = fetch_market_breadth(session_date)
+    p.institutional_cash = fetch_institutional_cash(session_date)
+    p.futures_oi_series = fetch_futures_oi_series(session_date)
+    p.foreign_top_stocks = fetch_foreign_top_stocks(session_date)
+    p.taifex_tx = fetch_taifex_tx(session_date)
+    p.margin = fetch_margin(session_date)   # 21:00 後才會有當日資料
+    p.tpex_index = fetch_tpex_index(session_date)
+
+    # 三個趨勢型指標：都以 K 棒日期為準重抓重算，不寫狀態檔，補跑結果一致
+    closes_by_date = {
+        b["date"]: b["close"]
+        for b in (p.taiex_ohlc or [])
+        if b.get("close") is not None
+    }
+    p.foreign_ex_etf = fetch_foreign_ex_etf(session_date)
+    p.basis_trend = fetch_basis_series(session_date, closes_by_date)
+    p.dividend_drag = fetch_dividend_drag(session_date)
+    p.margin_trend = fetch_margin_series(
+        sorted(closes_by_date)[-MARGIN_TREND_DAYS:], closes_by_date
+    )
+
+    # 隔日觀察清單：個股層級的篩選，資料量最大（每天一次全市場行情），放最後
+    from .shortlist import build_short_watchlist
+
+    p.short_watchlist = build_short_watchlist(sorted(closes_by_date))
+
+    p.derived = _derive_post(p)
 
     for name, val in [
         ("加權指數OHLC", p.taiex_ohlc),
@@ -797,6 +941,7 @@ def build_postmarket_payload(session_date: date, prev_date: date | None = None) 
         ("融資餘額", p.margin),
         ("融資連續趨勢", p.margin_trend),
         ("期現價差5日", p.basis_trend),
+        ("除息影響", p.dividend_drag),
         ("隔日觀察清單", p.short_watchlist),
         ("櫃買指數", p.tpex_index),
     ]:

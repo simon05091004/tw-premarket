@@ -188,8 +188,13 @@ def evaluate_candidate(
     return {
         "code": code,
         "name": bar.get("name", ""),
+        "開盤": bar.get("open"),
         "收盤": bar["close"],
         "漲跌幅_pct": change_pct,
+        # 條件裡的「收黑」指 K 線實體為黑（收盤 < 開盤），與漲跌幅正負是兩件事：
+        # 開高走低可以「漲 0.1% 但收黑」。不把這個布林值放進清單，讀者只看到
+        # 漲跌幅是正的，就會判定命中條件算錯。
+        "收黑": is_black,
         "成交金額_億": round(turnover_yi, 2),
         "量比": vol_ratio,
         "上影線實體比": shape["上影線實體比"],
@@ -260,21 +265,34 @@ def build_short_watchlist(trade_dates: list[str]) -> dict | None:
     if not candidates:
         return {"清單": [], "說明": "今日無標的同時符合任一組條件"}
 
-    # 可先賣後買排前面：不能先賣後買就當沖不了空方，條件命中再多也執行不了
-    candidates.sort(
-        key=lambda x: (not x["可當沖先賣後買"], -x["命中數"], -(x["量比"] or 0))
-    )
+    # 排序只看訊號強度。可先賣後買是「能不能當沖放空」的資格，不是盤勢訊號 ——
+    # 拿它當第一排序鍵，等於讓一檔命中 3 條件但不可先賣後買的股票，
+    # 排在命中 1 條件的可先賣後買標的後面，然後被 TOP_N 切掉。
+    # 清單定位是觀察，資格性限制留在欄位裡標註即可。
+    candidates.sort(key=lambda x: (-x["命中數"], -(x["量比"] or 0)))
     shortlist = candidates[:TOP_N]
     return {
         "清單": shortlist,
         "檢查檔數": len(today),
         "命中檔數": len(candidates),
-        "可先賣後買檔數": sum(1 for c in shortlist if c["可當沖先賣後買"]),
+        "清單檔數": len(shortlist),
+        "清單上限": TOP_N,
+        # 兩個母數分開報：一個是全部命中檔，一個是清單內。混在一起講，
+        # 「命中 156、可先賣後買 15」會被讀成資格過濾砍掉 141 檔。
+        "命中檔中可先賣後買檔數": sum(1 for c in candidates if c["可當沖先賣後買"]),
+        "清單中可先賣後買檔數": sum(1 for c in shortlist if c["可當沖先賣後買"]),
+        "命中數分佈": {
+            f"命中{n}": sum(1 for c in candidates if c["命中數"] == n) for n in (3, 2, 1)
+        },
         "條件": {
+            "收黑定義": "收盤 < 開盤（K 線實體為黑）；與漲跌幅正負無關，開高走低也算收黑",
             "量價背離": f"量比 ≥ {VOLUME_SPIKE} 且（收黑 或 上影線/實體 ≥ {UPPER_SHADOW_RATIO}）",
             "籌碼轉弱": f"外資連續賣超 ≥ {CONSECUTIVE_SELL_DAYS} 天",
             "過熱回落": f"對 10 日均線乖離 ≥ {DEVIATION_PCT}% 且收黑",
             "流動性下限": f"成交金額 ≥ {MIN_TURNOVER_YI} 億",
         },
-        "說明": "條件命中僅代表值得觀察；未回測、不含預期報酬，排序只依命中數與量比。",
+        "說明": (
+            "條件命中僅代表值得觀察；未回測、不含預期報酬。排序只依命中數與量比，"
+            "可當沖先賣後買僅為標註，不影響入選。清單為命中檔中的前 N 檔，非全部命中檔。"
+        ),
     }
