@@ -36,14 +36,13 @@ from .fetch import (  # 共用既有工具，不重複實作
     fetch_futures_oi_series,
     fetch_taiex_ohlc,
     fetch_taiex_turnover,
+    fetch_tpex_index,  # 盤前版也要用，實作已移到 fetch.py，這裡只留匯入
 )
 
 log = logging.getLogger(__name__)
 
 TWSE_MI_INDEX = "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX"
 TWSE_T86 = "https://www.twse.com.tw/rwd/zh/fund/T86"
-TPEX_INDEX = "https://www.tpex.org.tw/openapi/v1/tpex_index"
-TPEX_TRADING = "https://www.tpex.org.tw/openapi/v1/tpex_daily_trading_index"
 
 
 def _rows_from(js: Any, want: str) -> list[list[str]] | None:
@@ -646,52 +645,6 @@ def fetch_dividend_drag(d: date) -> dict | None:
             "來源百分比只到小數第 2 位，點數解析度約 ±5 點"
         ),
     }
-
-
-def fetch_tpex_index(d: date) -> dict | None:
-    """
-    櫃買指數（OHLC + 漲跌）與當日成交量值。
-
-    原本接的 tpex_mainboard_daily_close_quotes 是個股逐檔報價（上萬筆），
-    不是指數。指數在 /openapi/v1/tpex_index。
-
-    兩支端點的日期格式不同 —— 指數是西元 20260807，量值是民國 1150807，
-    這裡各自轉換。兩支都只提供最近 6 個交易日的滾動視窗，
-    補跑更早的日期會取不到（回 None，列入 missing）。
-    """
-    want_ad = d.strftime("%Y%m%d")
-    want_roc = f"{d.year - 1911}{d.month:02d}{d.day:02d}"
-
-    rows = _get_json(TPEX_INDEX)
-    row = next(
-        (r for r in rows if str(r.get("Date")) == want_ad), None
-    ) if isinstance(rows, list) else None
-    if not row:
-        log.info("櫃買指數：%s 不在端點的滾動視窗內", d)
-        return None
-
-    close, chg = _num(row.get("Close")), _num(row.get("Change"))
-    out: dict[str, Any] = {
-        "收盤": close,
-        "開盤": _num(row.get("Open")),
-        "最高": _num(row.get("High")),
-        "最低": _num(row.get("Low")),
-        "漲跌": chg,
-        "漲跌幅_pct": (
-            round(chg / (close - chg) * 100, 2)
-            if close is not None and chg is not None and close != chg
-            else None
-        ),
-    }
-
-    vol = _get_json(TPEX_TRADING)
-    vrow = next(
-        (r for r in vol if str(r.get("Date")) == want_roc), None
-    ) if isinstance(vol, list) else None
-    if vrow:
-        amt = _num(vrow.get("TradeAmount"))
-        out["成交金額_億"] = round(amt / 1e8, 2) if amt is not None else None
-    return out
 
 
 # ---------------------------------------------------------------------------

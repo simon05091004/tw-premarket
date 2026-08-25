@@ -12,9 +12,11 @@ from __future__ import annotations
 import csv
 import io
 import logging
+import os
 import time
 from dataclasses import dataclass, field, asdict
 from datetime import date, datetime, timedelta
+from statistics import median, pstdev
 from typing import Any, Callable
 from urllib.parse import urlparse
 
@@ -353,6 +355,8 @@ def fetch_taifex_institutional(trade_date: date) -> dict | None:
 # 證交所 TWSE
 # ---------------------------------------------------------------------------
 
+TPEX_INDEX = "https://www.tpex.org.tw/openapi/v1/tpex_index"
+TPEX_TRADING = "https://www.tpex.org.tw/openapi/v1/tpex_daily_trading_index"
 TWSE_TAIEX_HIST = "https://www.twse.com.tw/rwd/zh/TAIEX/MI_5MINS_HIST"
 TWSE_FMTQIK = "https://www.twse.com.tw/rwd/zh/afterTrading/FMTQIK"
 TWSE_BFI82U = "https://www.twse.com.tw/rwd/zh/fund/BFI82U"
@@ -470,6 +474,53 @@ def fetch_stock_close(trade_date: date, stock_no: str = "2330") -> dict | None:
     return out
 
 
+def fetch_tpex_index(d: date) -> dict | None:
+    """
+    櫃買指數（OHLC + 漲跌）與當日成交金額。
+
+    原本只有盤後版在用（fetch_post.py）。盤前也要：權值股單獨承壓的日子，
+    櫃買相對加權的強弱是判斷「單一族群事件 vs 全面 risk-off」最直接的驗證 ——
+    指數開低幾點看不出這件事，中小型股有沒有跟著塌才看得出來。
+
+    兩支端點的日期格式不同 —— 指數是西元 20260807，量值是民國 1150807，
+    這裡各自轉換。兩支都只提供最近 6 個交易日的滾動視窗，
+    補跑更早的日期會取不到（回 None，列入 missing）。
+    """
+    want_ad = d.strftime("%Y%m%d")
+    want_roc = f"{d.year - 1911}{d.month:02d}{d.day:02d}"
+
+    rows = _get_json(TPEX_INDEX)
+    row = next(
+        (r for r in rows if str(r.get("Date")) == want_ad), None
+    ) if isinstance(rows, list) else None
+    if not row:
+        log.info("櫃買指數：%s 不在端點的滾動視窗內", d)
+        return None
+
+    close, chg = _num(row.get("Close")), _num(row.get("Change"))
+    out: dict[str, Any] = {
+        "收盤": close,
+        "開盤": _num(row.get("Open")),
+        "最高": _num(row.get("High")),
+        "最低": _num(row.get("Low")),
+        "漲跌": chg,
+        "漲跌幅_pct": (
+            round(chg / (close - chg) * 100, 2)
+            if close is not None and chg is not None and close != chg
+            else None
+        ),
+    }
+
+    vol = _get_json(TPEX_TRADING)
+    vrow = next(
+        (r for r in vol if str(r.get("Date")) == want_roc), None
+    ) if isinstance(vol, list) else None
+    if vrow:
+        amt = _num(vrow.get("TradeAmount"))
+        out["成交金額_億"] = round(amt / 1e8, 2) if amt is not None else None
+    return out
+
+
 def fetch_institutional_cash(trade_date: date) -> dict | None:
     """三大法人現貨買賣超（億元）。"""
     js = _get_json(
@@ -537,16 +588,76 @@ class Payload:
     margin: dict | None = None
     taifex_tx: dict | None = None
     tsmc_spot: dict | None = None
+    tpex_index: dict | None = None
     derived: dict = field(default_factory=dict)
     missing: list = field(default_factory=list)
+    # 歷史序列（由 main.py 從 docs/data/payload-*.json 讀入）。
+    # 「今天這個數字算不算大」沒有歷史就答不出來 —— 溢價基準、外資部位水位、
+    # 槓桿變化三項都需要它。不寫進 to_dict()，避免把歷史再送進 API。
+    history: list = field(default_factory=list)
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        out = asdict(self)
+        out.pop("history", None)
+        return out
 
 
 def _sma(values: list[float], n: int) -> float | None:
     vals = [v for v in values if v is not None]
     return round(sum(vals[-n:]) / n, 2) if len(vals) >= n else None
+
+
+def _series(hist: list[dict], key: str, last: int | None = None) -> list[float]:
+    """歷史序列中某個欄位的非空值，依日期排序後取最後 last 筆。"""
+    vals = [h[key] for h in hist if h.get(key) is not None]
+    return vals[-last:] if last else vals
+
+
+def _pct_rank(x: float, hist: list[float]) -> float | None:
+    """x 在歷史樣本中的百分位（0–100）。樣本為空回 None。"""
+    if not hist:
+        return None
+    return round(100.0 * sum(1 for h in hist if h <= x) / len(hist), 1)
+
+
+def _confidence(n: int) -> str:
+    """樣本數換成一句可信度標註 —— 報告要能講出「這個基準有多站得住」。"""
+    if n >= 20:
+        return f"高（樣本 {n} 日）"
+    if n >= 10:
+        return f"中（樣本 {n} 日）"
+    return f"低（樣本僅 {n} 日，基準暫定）"
+
+
+HISTORY_KEYS = (
+    "台積電ADR溢價_pct_內部用",
+    "外資台指期淨未平倉口數",
+    "融資餘額_億",
+    "加權指數收盤",
+    "櫃買相對加權強弱_pp",
+)
+
+
+def history_from_payloads(payloads: list[dict]) -> list[dict]:
+    """
+    把過去的 payload JSON 壓成算基準需要的最小欄位。
+
+    只留 HISTORY_KEYS —— 歷史序列的用途只有「今天這個數字在自己的分布裡站在哪」，
+    其餘欄位一概不需要,留著只會讓記憶體與後續除錯變吵。
+    舊 payload 還沒有新欄位時自然是 None，由各計算段自行降級。
+    """
+    out: list[dict] = []
+    for p in payloads:
+        d = (p or {}).get("derived") or {}
+        row: dict[str, Any] = {"date": (p or {}).get("target_session")}
+        for k in HISTORY_KEYS:
+            row[k] = d.get(k)
+        # 融資餘額原本只在 margin 區塊，derived 是這次才加的
+        if row.get("融資餘額_億") is None:
+            row["融資餘額_億"] = ((p or {}).get("margin") or {}).get("融資餘額_億")
+        out.append(row)
+    out.sort(key=lambda r: r["date"] or "")
+    return out
 
 
 # VIX 分級門檻。只看漲跌% 會出事：VIX 從 12 漲 20% 到 14.4 仍是低波動，
@@ -555,8 +666,31 @@ VIX_BANDS = ((15.0, "低（<15）"), (20.0, "中性（15–20）"), (25.0, "偏�
 VIX_TOP = "恐慌（≥25）"
 
 # 外資與投信部位方向相反、且小的一邊 ≥ 大的一邊的這個比例 = 鏡像對峙。
-# 門檻定在程式碼裡：讓模型自己判斷「量級接近」，同一組數字每天可以講出不同結論。
+# 盤前版已停用（見 _derive 的籌碼段註解）；保留常數是因為盤後版 fetch_post 還在引用。
 MIRROR_RATIO = 0.85
+
+# --- 台積電 ADR 溢價（第 3 節）---
+ADR_SHARES_PER_UNIT = 5  # 1 ADR = 5 股普通股
+PREMIUM_BASELINE_DAYS = 60
+PREMIUM_MIN_SAMPLES = 3       # 少於這個樣本數就不算基準,整段降級為「資料不足」
+PREMIUM_FLAT_PP = 0.30        # 樣本不足以估 σ 時的固定門檻（百分點）
+PREMIUM_SIGMA_K = 1.0         # 有樣本時改用 k×σ，取兩者較大者
+# 台積電佔加權指數的權重。證交所沒有穩定的日更端點，這裡當成參數處理,
+# 並且一定要輸出到 derived —— 報告裡的點數歸因對這個數字很敏感,
+# 讀者要知道它是假設值而不是實測值。
+TSMC_INDEX_WEIGHT_PCT = float(os.getenv("TSMC_INDEX_WEIGHT_PCT", "30"))
+
+# --- 籌碼門檻（第 4 節）---
+# 未平倉「變動」小於自身水位的這個百分比、或小於這個絕對口數 → 標「持平」，
+# 不給任何方向性形容。8 萬口部位變動 65 口是雜訊,寫成「力道略緩」
+# 等於憑空生出一個不存在的方向。
+OI_FLAT_PCT = 1.0
+OI_FLAT_LOTS = 500
+CASH_FLAT_YI = 50.0     # 現貨買賣超小於此金額（億）→ 持平
+MARGIN_FLAT_PCT = 0.5   # 融資餘額日變動小於此百分比 → 持平
+
+# --- 櫃買 vs 上市（第 5 節）---
+OTC_DIVERGE_PP = 0.5    # 漲跌幅差距在此範圍內 → 同步，不解讀分化
 
 
 def _derive(p: Payload) -> dict[str, Any]:
@@ -574,6 +708,10 @@ def _derive(p: Payload) -> dict[str, Any]:
         if closes:
             spot = closes[-1]
             d["加權指數收盤"] = spot
+            if len(closes) >= 2 and closes[-2]:
+                # 櫃買分化要拿加權當日漲跌幅當對照，原本 derived 沒有這一欄。
+                d["加權指數漲跌_點"] = round(spot - closes[-2], 2)
+                d["加權指數漲跌幅_pct"] = round((spot - closes[-2]) / closes[-2] * 100, 2)
             for n in (5, 10, 20):
                 ma = _sma(closes, n)
                 d[f"{n}日均線"] = ma
@@ -618,29 +756,147 @@ def _derive(p: Payload) -> dict[str, Any]:
             d["夜盤較日盤收盤漲跌點"] = round(chg, 2)
             d["夜盤較日盤收盤漲跌_pct"] = round(chg / day_s["close"] * 100, 2)
 
+    # ------------------------------------------------------------------
+    # 籌碼
+    #
+    # 這一段原本有兩個問題,都是「把雜訊寫成訊號」:
+    #   1. 未平倉變動沒有門檻。外資 8 萬口部位變動 65 口（0.08%）被寫成
+    #      「偏空但力道略緩」—— 憑空給了一個不存在的方向。
+    #   2. 「外資投信鏡像對峙」把兩個結構性部位當成方向對賭。外資淨空長期是
+    #      避險／套利／選擇權對沖的常態部位,投信大額多單多與 ETF 的期貨替代
+    #      部位有關,兩邊都不是在押指數方向,「一方回補就放大波動」推不出來。
+    # 現在改成：先過門檻才給方向，水位只跟自己的歷史比。
+    # ------------------------------------------------------------------
     inst = p.institutional_futures or {}
-    for label in ("外資", "投信", "自營商"):
-        for suffix in ("台指期淨未平倉口數", "台指期淨未平倉_較前日增減"):
-            if inst.get(f"{label}{suffix}") is not None:
-                d[f"{label}{suffix}"] = inst[f"{label}{suffix}"]
-    foreign, trust = (
-        inst.get("外資台指期淨未平倉口數"),
-        inst.get("投信台指期淨未平倉口數"),
+    d["期貨部位動作門檻"] = (
+        f"|較前日增減| < 自身水位的 {OI_FLAT_PCT}% 或 < {OI_FLAT_LOTS} 口 → 判定為持平，"
+        "不得給任何方向性形容"
     )
-    if foreign is not None and trust is not None:
-        d["外資投信淨部位合計口數"] = round(foreign + trust)
-        big = max(abs(foreign), abs(trust))
-        if big:
-            ratio = round(min(abs(foreign), abs(trust)) / big, 2)
-            d["外資投信量級比"] = ratio
-            d["外資投信鏡像對峙"] = bool(foreign * trust < 0 and ratio >= MIRROR_RATIO)
+    for label in ("外資", "投信", "自營商"):
+        level = inst.get(f"{label}台指期淨未平倉口數")
+        chg = inst.get(f"{label}台指期淨未平倉_較前日增減")
+        if level is not None:
+            d[f"{label}台指期淨未平倉口數"] = level
+        if chg is not None:
+            d[f"{label}台指期淨未平倉_較前日增減"] = chg
+        if level and chg is not None:
+            pct = chg / abs(level) * 100
+            d[f"{label}台指期淨未平倉_較前日增減_pct"] = round(pct, 2)
+            if abs(pct) < OI_FLAT_PCT or abs(chg) < OI_FLAT_LOTS:
+                verdict = "持平"
+            elif level < 0:
+                verdict = "減空（回補）" if chg > 0 else "加空"
+            else:
+                verdict = "加多" if chg > 0 else "減多"
+            d[f"{label}台指期淨未平倉_動作判定"] = verdict
 
-    # 台積電 ADR 隱含台股價格（供判斷開盤溢價收斂空間）
+    # 水位只跟自己的歷史比 —— 8 萬口是常態還是極端，看分布，不看絕對值。
+    foreign = inst.get("外資台指期淨未平倉口數")
+    if foreign is not None:
+        hist = _series(p.history or [], "外資台指期淨未平倉口數", PREMIUM_BASELINE_DAYS)
+        d["外資台指期淨未平倉_水位性質"] = (
+            "結構性部位（避險／套利／選擇權對沖），水位本身不代表方向觀點；"
+            "有訊息的是相對自身歷史的位置與當日變動是否過門檻"
+        )
+        if hist:
+            rank = _pct_rank(foreign, hist)
+            d["外資台指期淨未平倉_水位百分位"] = rank
+            d["外資台指期淨未平倉_水位樣本"] = _confidence(len(hist))
+            if rank is not None:
+                d["外資台指期淨未平倉_水位分級"] = (
+                    "淨空偏極端" if rank <= 10 else
+                    "淨空偏高" if rank <= 30 else
+                    "淨空偏低" if rank >= 70 else
+                    "常態區間"
+                )
+
+    # 現貨買賣超同樣先過門檻
+    cash = p.institutional_cash or {}
+    for src, label in (
+        ("外資及陸資買賣超_億", "外資"),
+        ("投信買賣超_億", "投信"),
+        ("自營商買賣超_億", "自營商"),
+    ):
+        v = cash.get(src)
+        if v is not None:
+            d[f"{label}現貨買賣超_億"] = v
+            d[f"{label}現貨買賣超_動作判定"] = (
+                "持平" if abs(v) < CASH_FLAT_YI else ("買超" if v > 0 else "賣超")
+            )
+    d["現貨買賣超門檻"] = f"|買賣超| < {CASH_FLAT_YI} 億 → 判定為持平"
+
+    # 「現貨買、期貨加空」這種組合只有在雙邊都過門檻時才成立。
+    f_cash = cash.get("外資及陸資買賣超_億")
+    f_chg = inst.get("外資台指期淨未平倉_較前日增減")
+    if f_cash is not None and foreign and f_chg is not None:
+        cash_sig = abs(f_cash) >= CASH_FLAT_YI
+        oi_sig = not (
+            abs(f_chg / abs(foreign) * 100) < OI_FLAT_PCT or abs(f_chg) < OI_FLAT_LOTS
+        )
+        if cash_sig and oi_sig:
+            combo = f"現貨{'買超' if f_cash > 0 else '賣超'}＋期貨{d.get('外資台指期淨未平倉_動作判定')}"
+            if f_cash > 0 and foreign < 0 and f_chg < 0:
+                combo += "：參與反彈但不信任反彈"
+        elif cash_sig:
+            combo = f"僅現貨過門檻（{'買超' if f_cash > 0 else '賣超'} {abs(f_cash)} 億），期貨部位持平"
+        elif oi_sig:
+            combo = "僅期貨部位過門檻，現貨買賣超持平"
+        else:
+            combo = "現貨與期貨皆未過門檻，當日無外資籌碼訊號"
+        d["外資現貨期貨組合判定"] = combo
+
+    # 融資：日變動幾乎永遠是雜訊，真正有訊息的是「這波漲了多少、槓桿跟上沒有」
+    mg = p.margin or {}
+    bal, prev_bal = mg.get("融資餘額_億"), mg.get("融資前日餘額_億")
+    if bal is not None:
+        d["融資餘額_億"] = bal
+        if prev_bal:
+            chg_yi = bal - prev_bal
+            pct = chg_yi / prev_bal * 100
+            d["融資餘額_較前日增減_億"] = round(chg_yi, 2)
+            d["融資餘額_較前日增減_pct"] = round(pct, 2)
+            d["融資餘額_動作判定"] = (
+                "持平" if abs(pct) < MARGIN_FLAT_PCT else ("增加" if chg_yi > 0 else "去化")
+            )
+    base = next(
+        (h for h in (p.history or []) if h.get("融資餘額_億") and h.get("加權指數收盤")),
+        None,
+    )
+    if base and bal and spot:
+        m_chg = (bal - base["融資餘額_億"]) / base["融資餘額_億"] * 100
+        i_chg = (spot - base["加權指數收盤"]) / base["加權指數收盤"] * 100
+        d["槓桿觀察起點"] = base["date"]
+        d["槓桿觀察起點說明"] = (
+            "起點為現有 payload 歷史的最早一日，不等於本波低點；"
+            "更早的融資餘額未留存，跨越低點的槓桿變化無法計算"
+        )
+        d["融資餘額_較起點變化_pct"] = round(m_chg, 2)
+        d["指數_較起點變化_pct"] = round(i_chg, 2)
+        if abs(i_chg) >= 1.0:
+            if i_chg > 0:
+                d["槓桿判定"] = (
+                    "指數上漲、融資去化（槓桿未膨脹）" if m_chg < 0 else
+                    "指數上漲、融資增幅小於指數（槓桿相對收斂）" if m_chg < i_chg else
+                    "指數上漲、融資增幅大於指數（槓桿膨脹）"
+                )
+            else:
+                d["槓桿判定"] = (
+                    "指數下跌、融資同步去化" if m_chg <= i_chg else
+                    "指數下跌、融資去化幅度小於指數（槓桿未隨跌勢退場）"
+                )
+
+    # ------------------------------------------------------------------
+    # 台積電 ADR：只講「相對結構基準的偏離」，不講絕對溢價水準
+    #
+    # ADR 溢價長期就在 10% 上下（流動性、稅、借券成本造成的結構性價差），
+    # 不會回歸零 —— 「溢價 9.89% 很大」這句話沒有任何訊息量。
+    # 有訊息的是「今天的溢價相對它自己的常態站在哪」,以及那個偏離換算成
+    # 台積電現貨開盤該走多少、對指數是幾點。
+    # ------------------------------------------------------------------
     adr = p.us_market.get("台積電ADR")
     fx = p.us_market.get("美元兌台幣")
     if adr and fx and adr.get("close") and fx.get("close"):
-        # 1 ADR = 5 股普通股
-        implied = round(adr["close"] * fx["close"] / 5, 1)
+        implied = round(adr["close"] * fx["close"] / ADR_SHARES_PER_UNIT, 1)
         d["台積電ADR隱含台股價"] = implied
         tsmc = p.tsmc_spot or {}
         # 收盤價過期就不算溢價：拿上週的現貨去比今天的 ADR，得到的是一個
@@ -648,7 +904,90 @@ def _derive(p: Payload) -> dict[str, Any]:
         spot_2330 = tsmc.get("收盤") if tsmc.get("日期") == p.prev_trade_date else None
         if spot_2330:
             d["台積電現貨收盤"] = spot_2330
-            d["台積電ADR溢價_pct"] = round((implied - spot_2330) / spot_2330 * 100, 2)
+            prem = (implied - spot_2330) / spot_2330 * 100
+            # 保留原始值只為了累積歷史算基準。鍵名自帶「內部用」,
+            # prompt 端明文禁止把這個數字寫進報告。
+            d["台積電ADR溢價_pct_內部用"] = round(prem, 2)
+
+            hist = _series(p.history or [], "台積電ADR溢價_pct_內部用", PREMIUM_BASELINE_DAYS)
+            if len(hist) >= PREMIUM_MIN_SAMPLES:
+                baseline = median(hist)
+                sigma = pstdev(hist) if len(hist) >= 2 else 0.0
+                gap = prem - baseline
+                thr = max(PREMIUM_FLAT_PP, PREMIUM_SIGMA_K * sigma)
+                d["台積電ADR溢價基準_pct"] = round(baseline, 2)
+                d["台積電ADR溢價基準樣本"] = _confidence(len(hist))
+                d["台積電ADR溢價偏離基準_pp"] = round(gap, 2)
+                d["台積電ADR溢價偏離門檻_pp"] = round(thr, 2)
+                d["台積電ADR溢價偏離判定"] = (
+                    "持平（在雜訊區間內，不作方向解讀）" if abs(gap) < thr
+                    else ("低於基準（ADR 相對現貨轉弱）" if gap < 0 else "高於基準（ADR 相對現貨轉強）")
+                )
+                if abs(gap) >= thr:
+                    # 溢價要回到基準，缺口由現貨這一端補：現貨該走多少。
+                    move = ((1 + prem / 100) / (1 + baseline / 100) - 1) * 100
+                    d["台積電隱含現貨開盤變動_pct"] = round(move, 2)
+                    if spot is not None:
+                        w = TSMC_INDEX_WEIGHT_PCT / 100
+                        pts = spot * w * move / 100
+                        d["台積電指數權重_pct"] = TSMC_INDEX_WEIGHT_PCT
+                        d["台積電權重來源"] = "參數假設值（環境變數 TSMC_INDEX_WEIGHT_PCT），非當日實測"
+                        d["台積電隱含指數影響_點"] = round(pts, 1)
+                        night_pts = d.get("夜盤較日盤收盤漲跌點")
+                        if night_pts:
+                            share = pts / night_pts * 100
+                            d["台積電可解釋夜盤跌點_pct"] = round(share, 1)
+                            d["台積電歸因判定"] = (
+                                "夜盤幾乎可由台積電單獨解釋（弱勢高度集中）" if share >= 80 else
+                                "台積電解釋大部分夜盤變動（弱勢偏集中）" if share >= 50 else
+                                "台積電只解釋部分夜盤變動，其餘來自其他成分股" if share >= 20 else
+                                "台積電無法解釋夜盤變動，壓力來自其他成分股"
+                            )
+            else:
+                d["台積電ADR溢價基準_pct"] = None
+                d["台積電ADR溢價基準樣本"] = f"不足（僅 {len(hist)} 日，需 {PREMIUM_MIN_SAMPLES} 日以上）"
+                d["台積電ADR溢價偏離判定"] = "歷史樣本不足，本節不作溢價判讀"
+
+            # 三腳拆解：溢價變化 = ADR 漲跌 + 匯率變動 − 現貨漲跌。
+            # 這是「ADR 比現貨多跌／多漲多少」的乾淨數字，也順帶把匯率放進報告。
+            adr_pct = adr.get("change_pct")
+            fx_pct = fx.get("change_pct")
+            spot_pct = tsmc.get("漲跌幅_pct")
+            if None not in (adr_pct, fx_pct, spot_pct):
+                d["台積電ADR漲跌幅_pct"] = adr_pct
+                d["美元兌台幣漲跌_pct"] = fx_pct
+                d["台積電現貨漲跌幅_pct"] = spot_pct
+                d["ADR減現貨報酬差_pct"] = round(adr_pct + fx_pct - spot_pct, 2)
+
+    # ------------------------------------------------------------------
+    # 櫃買 vs 上市：權值股單獨承壓的日子，中小型股有沒有跟著塌
+    # 才分得出「單一族群事件」與「全面 risk-off」。
+    # ------------------------------------------------------------------
+    otc = p.tpex_index or {}
+    if otc.get("漲跌幅_pct") is not None:
+        d["櫃買指數收盤"] = otc.get("收盤")
+        d["櫃買漲跌幅_pct"] = otc["漲跌幅_pct"]
+        twse_pct = d.get("加權指數漲跌幅_pct")
+        if twse_pct is not None:
+            div = round(otc["漲跌幅_pct"] - twse_pct, 2)
+            d["櫃買相對加權強弱_pp"] = div
+            d["櫃買分化門檻_pp"] = OTC_DIVERGE_PP
+            d["櫃買相對加權強弱_判定"] = (
+                "同步（無分化訊號）" if abs(div) <= OTC_DIVERGE_PP
+                else ("櫃買相對強（資金留在中小型股，偏類股輪動）" if div > 0
+                      else "櫃買相對弱（賣壓不限於權值股，偏全面性）")
+            )
+            hist_div = _series(p.history or [], "櫃買相對加權強弱_pp", 5)
+            if hist_div:
+                d["櫃買相對加權強弱_近5日累計_pp"] = round(sum(hist_div) + div, 2)
+                d["櫃買相對加權強弱_近5日樣本"] = _confidence(len(hist_div) + 1)
+    if otc.get("成交金額_億") is not None:
+        d["櫃買成交金額_億"] = otc["成交金額_億"]
+        turn = p.taiex_turnover or []
+        twse_amt = turn[-1]["turnover_yi"] if turn else None
+        if twse_amt:
+            d["上市成交金額_億"] = twse_amt
+            d["櫃買上市成交值比"] = round(otc["成交金額_億"] / twse_amt, 3)
 
     vix = (p.us_market.get("VIX") or {}).get("close")
     if vix is not None:
@@ -660,11 +999,14 @@ def _derive(p: Payload) -> dict[str, Any]:
     return d
 
 
-def build_payload(prev_trade_date: date, today: date) -> Payload:
+def build_payload(
+    prev_trade_date: date, today: date, history: list[dict] | None = None
+) -> Payload:
     p = Payload(
         generated_at=datetime.now().astimezone().isoformat(timespec="seconds"),
         target_session=today.isoformat(),
         prev_trade_date=prev_trade_date.isoformat(),
+        history=history or [],
     )
 
     p.us_market = fetch_us_market()
@@ -697,6 +1039,7 @@ def build_payload(prev_trade_date: date, today: date) -> Payload:
     p.institutional_cash = fetch_institutional_cash(prev_trade_date)
     p.margin = fetch_margin(prev_trade_date)
     p.tsmc_spot = fetch_stock_close(prev_trade_date)
+    p.tpex_index = fetch_tpex_index(prev_trade_date)
 
     p.derived = _derive(p)
 
@@ -711,6 +1054,7 @@ def build_payload(prev_trade_date: date, today: date) -> Payload:
         ("三大法人現貨買賣超", p.institutional_cash),
         ("融資餘額", p.margin),
         ("台積電現貨收盤", p.tsmc_spot),
+        ("櫃買指數", p.tpex_index),
     ]:
         if not val:
             p.missing.append(name)

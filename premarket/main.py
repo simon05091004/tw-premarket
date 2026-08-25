@@ -130,6 +130,31 @@ def load_prev_payload(prefix: str = "payload") -> dict | None:
         return None
 
 
+def load_history(today: date, prefix: str = "payload", days: int = 60) -> list[dict]:
+    """
+    過去已產出的 payload，供計算「基準」用。
+
+    ADR 溢價、外資期貨部位水位、槓桿變化這三項的共同問題是：單看今天的數字
+    答不出「這算大嗎」。溢價 9.89% 是高是低，要跟它自己的常態比才知道。
+    這裡把歷史讀進來,壓成最小欄位後交給 fetch._derive。
+
+    讀壞的檔案跳過即可 —— 基準少一天不影響結論，讓整份報告掛掉才是問題。
+    """
+    out: list[dict] = []
+    for f in sorted(DATA.glob(f"{prefix}-*.json")):
+        try:
+            d = date.fromisoformat(f.stem.split("-", 1)[1])
+        except ValueError:
+            continue
+        if d >= today:
+            continue
+        try:
+            out.append(json.loads(f.read_text(encoding="utf-8")))
+        except Exception:  # noqa: BLE001
+            log.warning("歷史 payload 讀取失敗，略過: %s", f.name)
+    return fetch.history_from_payloads(out[-days:])
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true", help="不呼叫 API，只輸出 JSON")
@@ -175,7 +200,9 @@ def main() -> int:
         # 盤後看的是今天收盤後的結果,所以 session_date 是今天、prev 供計算變化量
         payload = fetch_post.build_postmarket_payload(today, prev)
     else:
-        payload = fetch.build_payload(prev, today)
+        history = load_history(today, spec.payload_prefix)
+        log.info("歷史基準樣本: %d 日", len(history))
+        payload = fetch.build_payload(prev, today, history=history)
     if payload.missing:
         log.warning("缺少資料源: %s", "、".join(payload.missing))
     if len(payload.missing) >= 5:
