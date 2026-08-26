@@ -19,6 +19,7 @@
   --a1:#a1670f; --a1-bg:#fbf3e2; --a1-ln:#e6d3a8;
   --a2:#1d5ba4; --a2-bg:#edf3fc; --a2-ln:#c3d7f0;
   --a3:#1c7549; --a3-bg:#eaf6ef; --a3-ln:#b5dcc4;
+  --a4:#7a3f8c; --a4-bg:#f8eefb; --a4-ln:#dfc4e8;
   --warn:#9c3412; --warn-bg:#fbeee7;
   --focus:#1d5ba4;
   --sh:0 1px 2px rgba(40,32,18,.05), 0 6px 18px -10px rgba(40,32,18,.18);
@@ -31,6 +32,7 @@
     --a1:#e3a943; --a1-bg:#332a17; --a1-ln:#584825;
     --a2:#7db0ef; --a2-bg:#1a2634; --a2-ln:#2e4864;
     --a3:#5ec68e; --a3-bg:#172b20; --a3-ln:#2b543e;
+    --a4:#cb99dc; --a4-bg:#2b1f31; --a4-ln:#4c3557;
     --warn:#f0a184; --warn-bg:#33211a;
     --focus:#7db0ef;
     --sh:0 1px 2px rgba(0,0,0,.3), 0 6px 18px -10px rgba(0,0,0,.6);
@@ -43,6 +45,7 @@
   --a1:#e3a943; --a1-bg:#332a17; --a1-ln:#584825;
   --a2:#7db0ef; --a2-bg:#1a2634; --a2-ln:#2e4864;
   --a3:#5ec68e; --a3-bg:#172b20; --a3-ln:#2b543e;
+  --a4:#cb99dc; --a4-bg:#2b1f31; --a4-ln:#4c3557;
   --warn:#f0a184; --warn-bg:#33211a;
   --focus:#7db0ef;
   --sh:0 1px 2px rgba(0,0,0,.3), 0 6px 18px -10px rgba(0,0,0,.6);
@@ -93,6 +96,7 @@ h2{margin:0;font-family:"Noto Serif TC",serif;font-weight:600;font-size:19px;let
 .ses.s1{--ac:var(--a1);--ac-bg:var(--a1-bg);--ac-ln:var(--a1-ln)}
 .ses.s2{--ac:var(--a2);--ac-bg:var(--a2-bg);--ac-ln:var(--a2-ln)}
 .ses.s3{--ac:var(--a3);--ac-bg:var(--a3-bg);--ac-ln:var(--a3-ln)}
+.ses.s4{--ac:var(--a4);--ac-bg:var(--a4-bg);--ac-ln:var(--a4-ln)}
 .ses h2{color:var(--ac)}
 .ses .kicker{color:var(--ac)}
 .tally{margin-left:auto;font-size:13px;color:var(--dim)}
@@ -132,8 +136,7 @@ td.blocked{background:repeating-linear-gradient(135deg,transparent,transparent 5
   background:var(--ac-bg);border:1px solid var(--ac-ln);border-radius:999px;padding:0 6px;line-height:15px;
   white-space:nowrap;margin-bottom:1px}
 th.rh .pt2{display:block;font-size:9.5px;color:var(--faint);margin-top:1px;line-height:1.3}
-.seat.open.no{border-style:solid;border-color:var(--hair);background:var(--sunk);
-  color:var(--faint);font-size:11px;opacity:.75;cursor:not-allowed}
+.badge.warn{color:var(--warn);background:var(--warn-bg);border-color:var(--warn);opacity:.9;margin:1px 0 0}
 .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--dim)}
 .legend i{display:inline-block;width:12px;height:12px;border-radius:4px;vertical-align:-2px;margin-right:5px}
 
@@ -148,7 +151,7 @@ table.sum td.none{color:var(--warn)}
 table.sum td em{font-style:normal;font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums}
 .sumwrap{overflow-x:auto}
 .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;border:1px solid currentColor;opacity:.85}
-.t1{color:var(--a1)} .t2{color:var(--a2)} .t3{color:var(--a3)}
+.t1{color:var(--a1)} .t2{color:var(--a2)} .t3{color:var(--a3)} .t4{color:var(--a4)}
 
 /* ---------- buttons ---------- */
 .actions{display:flex;gap:9px;flex-wrap:wrap;padding-top:2px}
@@ -239,7 +242,7 @@ const CFG = {
   title: "五、六年級游泳課時段選填",
   shareTitle: "游泳課選填入口",
   itemLabel: "週次",
-  perCell: 3,              /* 每格最多幾個班 */
+  perCell: 4,              /* 每格最多幾個班 */
   picksPerClass: 3,        /* 每個班要選幾個時段（每班游三次） */
   groups: [                /* 班級分組，只影響第一步的排版 */
     {name:"五年級", count:11},
@@ -255,7 +258,7 @@ const CFG = {
   ],
   sessions: [
     {id:"w1", name:"第一週", month:"10/5 – 10/8", tone:1, days:[
-      {id:"1005", date:"10/5",  wd:"星期一", open:["m1","m2","a1","a2"]},
+      {id:"1005", date:"10/5",  wd:"星期一", open:["m1","m2"]},
       {id:"1006", date:"10/6",  wd:"星期二", open:["m1","a1","a2"]},
       {id:"1007", date:"10/7",  wd:"星期三", open:[]},
       {id:"1008", date:"10/8",  wd:"星期四", open:["m1","m2","a1","a2"]}
@@ -271,6 +274,12 @@ const CFG = {
       {id:"1020", date:"10/20", wd:"星期二", open:["m1","a1","a2"]},
       {id:"1021", date:"10/21", wd:"星期三", open:[]},
       {id:"1022", date:"10/22", wd:"星期四", open:[]}
+    ]},
+    {id:"w4", name:"第四週", month:"10/26 – 10/29", tone:4, days:[
+      {id:"1026", date:"10/26", wd:"星期一", open:[]},
+      {id:"1027", date:"10/27", wd:"星期二", open:["m1","m2","a1","a2"]},
+      {id:"1028", date:"10/28", wd:"星期三", open:["m1"]},
+      {id:"1029", date:"10/29", wd:"星期四", open:[]}
     ]}
   ],
   /* 額外限制：符合 wd + periods 的格子視為同一組，每個班合計最多 max 次 */
@@ -278,7 +287,8 @@ const CFG = {
     {id:"tueAft", label:"週二下午限 1 次", max:1, wd:"星期二", periods:["a1","a2"],
      msg:"週二的下午（一）、下午（二），每個班合計只能選 1 次"}
   ],
-  tailNote: "10/26–10/29 整週不排游泳課"
+  /* 額外說明，會列在標頭與分享頁 */
+  notes: ["同一時段若已有 3 個班，請自行抽籤或協調"]
 };
 const LS_KEY = "yfes-swim-115-1";
 const LS_ME  = "yfes-swim-115-1-me";
@@ -298,6 +308,8 @@ const DAY = id => {
 };
 const key = (dayId, pid) => dayId + "/" + pid;
 const MAXPICK = CFG.picksPerClass || 1;
+const NUM = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
+const nWeeks = () => (NUM[CFG.sessions.length] || CFG.sessions.length) + "週";
 /** 時段的先後順序，用來把某班的三個選擇排成第一次／第二次／第三次 */
 const ORD = (() => {
   const m = {}; let i = 0;
@@ -581,7 +593,7 @@ function renderChips(){
     hint.textContent = me + " 班：已選 " + n + " / " + MAXPICK + " 個時段。"
       + (left > 0 ? "還要再選 " + left + " 個，點下面表格的「可選」格子。" : "已選滿，點自己班的格子可取消重選。");
   }else{
-    hint.textContent = "點一下自己的班級，再到下面三週的表格挑 " + MAXPICK + " 個時段。圓點代表該班已選的次數。";
+    hint.textContent = "點一下自己的班級，再到下面 " + nWeeks() + "的表格挑 " + MAXPICK + " 個時段。圓點代表該班已選的次數。";
   }
   const mb = document.getElementById("btnMine");
   if(mb){ mb.disabled = !me; mb.textContent = me ? "複製 " + me + " 班的選擇" : "複製我的選擇"; }
@@ -650,9 +662,6 @@ function renderSessions(){
         const occ = occupants(k);
         const lim = limitOf(k);
         if(lim) cell.appendChild(el("span", "badge", lim.label));
-        /* 這個班已經用完該格所屬的限制，就不再顯示可選 */
-        const locked = !!(lim && me && !hasPick(me, k) && limitUsed(me, lim) >= lim.max);
-        const capped = !!(me && !hasPick(me, k) && doneCount(me) >= MAXPICK);
         for(let i = 0; i < CFG.perCell; i++){
           const who = occ[i];
           if(who){
@@ -666,12 +675,9 @@ function renderSessions(){
               b.setAttribute("aria-label", who + " 班已選");
             }
             cell.appendChild(b);
-          }else if(locked || capped){
-            const b = el("button", "seat open no", locked ? "限 1 次" : "已選滿");
-            b.type = "button"; b.disabled = true;
-            b.setAttribute("aria-label", locked ? lim.msg : me + " 班已選滿 " + MAXPICK + " 個時段");
-            cell.appendChild(b);
           }else{
+            /* 空位永遠顯示「可選」—— 不因為別班選走或自己額滿而變灰消失，
+               真的不能選時由 addPick 跳出訊息說明原因 */
             const b = el("button", "seat open", "可選");
             b.type = "button";
             b.setAttribute("aria-label", d.date + " " + p.name + " 可選");
@@ -679,6 +685,7 @@ function renderSessions(){
             cell.appendChild(b);
           }
         }
+        if(occ.length >= 3) cell.appendChild(el("span", "badge warn", occ.length + " 班，需抽籤協調"));
         td.appendChild(cell);
         tr.appendChild(td);
       });
@@ -743,7 +750,7 @@ function renderSummary(){
   const thead = el("thead"); const hr = el("tr");
   ["班級"].concat(cols).forEach((h, i) => {
     const th = el("th", null, h); th.scope = "col";
-    if(i > 0) th.className = "t" + (((i - 1) % 3) + 1);
+    if(i > 0) th.className = "t" + (((i - 1) % 4) + 1);
     hr.appendChild(th);
   });
   thead.appendChild(hr); t.appendChild(thead);
@@ -786,7 +793,7 @@ function renderHeader(){
   document.getElementById("hdTitle").textContent = CFG.title;
   const lede = document.getElementById("hdLede");
   lede.textContent = "";
-  lede.appendChild(document.createTextNode("每個班在下面三週的表格中挑 "));
+  lede.appendChild(document.createTextNode("每個班在下面 " + nWeeks() + "的表格中挑 "));
   const b0 = document.createElement("b");
   b0.textContent = MAXPICK + " 個時段";
   lede.appendChild(b0);
@@ -795,13 +802,18 @@ function renderHeader(){
   b.textContent = CFG.perCell + " 個班";
   lede.appendChild(b);
   lede.appendChild(document.createTextNode("，先選先得。"));
-  (CFG.limits || []).forEach(L => {
+  (CFG.limits || []).map(L => L.msg).concat(CFG.notes || []).forEach(t => {
     lede.appendChild(document.createElement("br"));
-    lede.appendChild(document.createTextNode(L.msg + "。"));
+    lede.appendChild(document.createTextNode(t + "。"));
   });
   document.getElementById("hdDates").textContent =
     CFG.sessions.map(s => s.name + " " + s.days.filter(d => d.open.length).map(d => d.date).join("、")).join("　")
     + (CFG.tailNote ? "　·　" + CFG.tailNote : "");
+  lede.appendChild(document.createElement("br"));
+  const b2 = document.createElement("b");
+  b2.textContent = "被選走的時段不會消失";
+  lede.appendChild(b2);
+  lede.appendChild(document.createTextNode("，格子裡會直接標出是哪幾個班選的。"));
   document.title = CFG.title;
 }
 function renderAll(){ renderHeader(); renderChips(); renderSessions(); renderSummary(); renderSync(); }
@@ -1069,13 +1081,14 @@ function buildCsv(){
 /* ---------- 畫成 A4 橫式表格 → PDF ---------- */
 const PC = { ink:"#1e1c19", dim:"#6d675e", faint:"#a9a297", line:"#c9c3b8", hair:"#ded8cd",
              head:"#f4f2ec", rowh:"#faf9f6", block:"#f2f0ea",
-             tone:{1:{fg:"#8f5a0b",bg:"#fbf3e2"}, 2:{fg:"#1a5296",bg:"#edf3fc"}, 3:{fg:"#186640",bg:"#eaf6ef"}} };
+             tone:{1:{fg:"#8f5a0b",bg:"#fbf3e2"}, 2:{fg:"#1a5296",bg:"#edf3fc"}, 3:{fg:"#186640",bg:"#eaf6ef"},
+                   4:{fg:"#6e3880",bg:"#f8eefb"}} };
 const FS = '"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif';
 const FM = '"IBM Plex Mono",ui-monospace,Menlo,monospace';
 
 function renderSheetCanvas(scale){
   const days = allDays();
-  const PAD = 28, C0 = 158, CW = 112, HT = 86, H1 = 54, H2 = 34, RH = 62, FT = 28;
+  const PAD = 28, C0 = 158, CW = 112, HT = 86, H1 = 54, H2 = 34, RH = 72, FT = 28;
   const tableW = C0 + days.length * CW;
   const W = tableW + PAD * 2;
   const top = PAD + HT;
@@ -1140,17 +1153,12 @@ function renderSheetCanvas(scale){
         txt("—", cx(i) + CW / 2, y + RH / 2, '400 14px ' + FS, PC.faint);
         return;
       }
-      /* 一格最多三個班，依數量決定字級與行距 */
+      /* 一格最多四個班，依數量決定字級與行距 */
       const n = occ.length;
-      if(n === 1){
-        txt(occ[0], cx(i) + CW / 2, y + RH / 2, '600 19px ' + FM, PC.ink);
-      }else if(n === 2){
-        txt(occ[0], cx(i) + CW / 2, y + RH / 2 - 11, '600 17px ' + FM, PC.ink);
-        txt(occ[1], cx(i) + CW / 2, y + RH / 2 + 11, '600 17px ' + FM, PC.ink);
-      }else if(n >= 3){
-        for(let j = 0; j < Math.min(n, 3); j++){
-          txt(occ[j], cx(i) + CW / 2, y + RH / 2 + (j - 1) * 17, '600 15.5px ' + FM, PC.ink);
-        }
+      const spec = n <= 1 ? {f:19, gap:0} : n === 2 ? {f:17, gap:22} : n === 3 ? {f:15.5, gap:17} : {f:14, gap:15};
+      for(let j = 0; j < n; j++){
+        const off = spec.gap ? (j - (n - 1) / 2) * spec.gap : 0;
+        txt(occ[j], cx(i) + CW / 2, y + RH / 2 + off, '600 ' + spec.f + 'px ' + FM, PC.ink);
       }
     });
   });

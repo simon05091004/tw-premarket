@@ -16,6 +16,7 @@
   --paper:#faf8f4; --card:#ffffff; --ink:#1e1c19; --dim:#6d675e; --faint:#989185;
   --line:#e4dfd5; --sunk:#f4f1ea;
   --a1:#a1670f; --a1-bg:#fbf3e2; --a2:#1d5ba4; --a2-bg:#edf3fc; --a3:#1c7549; --a3-bg:#eaf6ef;
+  --a4:#7a3f8c; --a4-bg:#f8eefb;
   --focus:#1d5ba4;
   --sh:0 1px 2px rgba(40,32,18,.05), 0 10px 34px -14px rgba(40,32,18,.28);
 }
@@ -24,6 +25,7 @@
     --paper:#1a1815; --card:#232019; --ink:#ece6dc; --dim:#a09789; --faint:#7b7366;
     --line:#35312a; --sunk:#1f1c17;
     --a1:#e3a943; --a1-bg:#332a17; --a2:#7db0ef; --a2-bg:#1a2634; --a3:#5ec68e; --a3-bg:#172b20;
+    --a4:#cb99dc; --a4-bg:#2b1f31;
     --focus:#7db0ef;
     --sh:0 1px 2px rgba(0,0,0,.3), 0 10px 34px -14px rgba(0,0,0,.7);
   }
@@ -32,6 +34,7 @@
   --paper:#1a1815; --card:#232019; --ink:#ece6dc; --dim:#a09789; --faint:#7b7366;
   --line:#35312a; --sunk:#1f1c17;
   --a1:#e3a943; --a1-bg:#332a17; --a2:#7db0ef; --a2-bg:#1a2634; --a3:#5ec68e; --a3-bg:#172b20;
+  --a4:#cb99dc; --a4-bg:#2b1f31;
   --focus:#7db0ef;
   --sh:0 1px 2px rgba(0,0,0,.3), 0 10px 34px -14px rgba(0,0,0,.7);
 }
@@ -77,7 +80,7 @@ h1{margin:0;font-family:"Noto Serif TC",serif;font-weight:700;font-size:clamp(24
 .row{display:flex;align-items:center;gap:10px;font-size:14px}
 .pill{flex:0 0 auto;font-size:12.5px;font-weight:600;padding:3px 10px;border-radius:999px}
 .p1{color:var(--a1);background:var(--a1-bg)} .p2{color:var(--a2);background:var(--a2-bg)}
-.p3{color:var(--a3);background:var(--a3-bg)}
+.p3{color:var(--a3);background:var(--a3-bg)} .p4{color:var(--a4);background:var(--a4-bg)}
 .row em{font-style:normal;font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums}
 .note{margin:0;font-size:13px;color:var(--dim);border-top:1px solid var(--line);padding-top:10px}
 footer{text-align:center;color:var(--faint);font-size:12.5px;line-height:1.8}
@@ -120,8 +123,8 @@ footer{text-align:center;color:var(--faint);font-size:12.5px;line-height:1.8}
 
   <ol class="steps">
     <li><div><b>點選自己的班級</b><span>501 到 611，點一下就成為目前身分</span></div></li>
-    <li><div><b>選 3 個時段</b><span>在第一週、第二週、第三週的表格中挑 3 格，點「可選」</span></div></li>
-    <li><div><b>選好就完成了</b><span>22 個班看到同一份，時段被選走會即時消失</span></div></li>
+    <li><div><b>選 3 個時段</b><span>在第一週、第二週、第三週、第四週的表格中挑 3 格，點「可選」</span></div></li>
+    <li><div><b>選好就完成了</b><span>22 個班看到同一份，誰選了哪一格會即時顯示</span></div></li>
   </ol>
 
   <section class="when">
@@ -130,8 +133,9 @@ footer{text-align:center;color:var(--faint);font-size:12.5px;line-height:1.8}
       <div class="row"><span class="pill p1">第一週</span><em>10/5</em>（一）　<em>10/6</em>（二）　<em>10/8</em>（四）</div>
       <div class="row"><span class="pill p2">第二週</span><em>10/12</em>（一）　<em>10/13</em>（二）</div>
       <div class="row"><span class="pill p3">第三週</span><em>10/19</em>（一）　<em>10/20</em>（二）</div>
+      <div class="row"><span class="pill p4">第四週</span><em>10/27</em>（二）　<em>10/28</em>（三）</div>
     </div>
-    <p class="note">每個時段最多 3 個班，先選先得。<br>週二的下午（一）、下午（二），每個班合計只能選 1 次。<br>10/26–10/29 整週不排游泳課。</p>
+    <p class="note">每個時段最多 4 個班，先選先得。<br>週二的下午（一）、下午（二），每個班合計只能選 1 次。<br>同一時段若已有 3 個班，請自行抽籤或協調。</p>
   </section>
 
   <footer>負責人可在選填表最下方查看總覽<br>並匯出 Excel 與 PDF</footer>
