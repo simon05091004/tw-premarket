@@ -288,7 +288,8 @@ const CFG = {
      msg:"週二的下午（一）、下午（二），每個班合計只能選 1 次"}
   ],
   /* 額外說明，會列在標頭與分享頁 */
-  notes: ["同一時段若已有 3 個班，請自行抽籤或協調"]
+  notes: ["同一時段若已有 4 個班，將以抽籤或協調方式解決"],
+  coordinateAt: 4         /* 一格累積到幾個班就亮出「需抽籤或協調」 */
 };
 const LS_KEY = "yfes-swim-115-1";
 const LS_ME  = "yfes-swim-115-1-me";
@@ -685,7 +686,9 @@ function renderSessions(){
             cell.appendChild(b);
           }
         }
-        if(occ.length >= 3) cell.appendChild(el("span", "badge warn", occ.length + " 班，需抽籤協調"));
+        if(CFG.coordinateAt && occ.length >= CFG.coordinateAt){
+          cell.appendChild(el("span", "badge warn", occ.length + " 班，需抽籤或協調"));
+        }
         td.appendChild(cell);
         tr.appendChild(td);
       });
