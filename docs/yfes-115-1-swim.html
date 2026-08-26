@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>五、六年級游泳課時段選填</title>
-<meta name="description" content="五、六年級各班線上選填游泳課時段，每班選三個時段，每格最多三個班，先選先得">
+<meta name="description" content="五、六年級各班線上選填游泳課時段，每班選三個時段，每個時段最多八個班">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#faf8f4">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -242,7 +242,8 @@ const CFG = {
   title: "五、六年級游泳課時段選填",
   shareTitle: "游泳課選填入口",
   itemLabel: "週次",
-  perCell: 4,              /* 每格最多幾個班 */
+  perCell: 8,              /* 每格最多幾個班 */
+  firstCome: false,        /* 不是先選先得，滿 coordinateAt 班就抽籤或協調 */
   picksPerClass: 3,        /* 每個班要選幾個時段（每班游三次） */
   groups: [                /* 班級分組，只影響第一步的排版 */
     {name:"五年級", count:11},
@@ -288,7 +289,7 @@ const CFG = {
      msg:"週二的下午（一）、下午（二），每個班合計只能選 1 次"}
   ],
   /* 額外說明，會列在標頭與分享頁 */
-  notes: ["同一時段若已有 4 個班，將以抽籤或協調方式解決"],
+  notes: ["4 個班以上同時選擇該時段，則抽籤或自行協調"],
   coordinateAt: 4         /* 一格累積到幾個班就亮出「需抽籤或協調」 */
 };
 const LS_KEY = "yfes-swim-115-1";
@@ -804,7 +805,7 @@ function renderHeader(){
   const b = document.createElement("b");
   b.textContent = CFG.perCell + " 個班";
   lede.appendChild(b);
-  lede.appendChild(document.createTextNode("，先選先得。"));
+  lede.appendChild(document.createTextNode(CFG.firstCome === false ? "。" : "，先選先得。"));
   (CFG.limits || []).map(L => L.msg).concat(CFG.notes || []).forEach(t => {
     lede.appendChild(document.createElement("br"));
     lede.appendChild(document.createTextNode(t + "。"));
@@ -1091,7 +1092,17 @@ const FM = '"IBM Plex Mono",ui-monospace,Menlo,monospace';
 
 function renderSheetCanvas(scale){
   const days = allDays();
-  const PAD = 28, C0 = 158, CW = 112, HT = 86, H1 = 54, H2 = 34, RH = 72, FT = 28;
+  const PAD = 28, C0 = 158, CW = 112, HT = 86, H1 = 54, H2 = 34, FT = 28;
+  /* 列高跟著實際最多的班數走：4 個以內單欄，超過就排兩欄 */
+  let maxOcc = 1;
+  days.forEach(x => CFG.periods.forEach(p => {
+    const occ = gridCell(x.day, p);
+    if(occ) maxOcc = Math.max(maxOcc, occ.length);
+  }));
+  const cellCols = maxOcc > 4 ? 2 : 1;
+  const cellRows = Math.ceil(maxOcc / cellCols);
+  const cellFS = maxOcc <= 1 ? 19 : maxOcc <= 2 ? 17 : maxOcc <= 4 ? 15.5 : 13.5;
+  const RH = Math.max(62, 22 + cellRows * (cellFS + 4));
   const tableW = C0 + days.length * CW;
   const W = tableW + PAD * 2;
   const top = PAD + HT;
@@ -1156,12 +1167,14 @@ function renderSheetCanvas(scale){
         txt("—", cx(i) + CW / 2, y + RH / 2, '400 14px ' + FS, PC.faint);
         return;
       }
-      /* 一格最多四個班，依數量決定字級與行距 */
-      const n = occ.length;
-      const spec = n <= 1 ? {f:19, gap:0} : n === 2 ? {f:17, gap:22} : n === 3 ? {f:15.5, gap:17} : {f:14, gap:15};
+      /* 全表用同一套字級與欄數，各格才對得齊 */
+      const n = occ.length, gap = cellFS + 4;
+      const rows = Math.ceil(n / cellCols);
       for(let j = 0; j < n; j++){
-        const off = spec.gap ? (j - (n - 1) / 2) * spec.gap : 0;
-        txt(occ[j], cx(i) + CW / 2, y + RH / 2 + off, '600 ' + spec.f + 'px ' + FM, PC.ink);
+        const r = Math.floor(j / cellCols), c = j % cellCols;
+        const dx = cellCols === 2 ? (c - 0.5) * (CW / 2 - 2) : 0;
+        const dy = (r - (rows - 1) / 2) * gap;
+        txt(occ[j], cx(i) + CW / 2 + dx, y + RH / 2 + dy, '600 ' + cellFS + 'px ' + FM, PC.ink);
       }
     });
   });
