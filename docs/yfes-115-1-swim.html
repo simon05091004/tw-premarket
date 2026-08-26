@@ -715,7 +715,7 @@ async function addPick(k){
     document.getElementById("whoPanel").scrollIntoView({behavior:"smooth", block:"center"});
     return;
   }
-  const cls = me, lim = limitOf(k);
+  const cls = me, lim = limitOf(k), before = doneCount(cls);
   if(doneCount(cls) >= MAXPICK){ toast(cls + " 班已經選滿 " + MAXPICK + " 個時段，先取消一個再選"); return; }
   if(lim && limitUsed(cls, lim) >= lim.max){ toast(lim.msg); return; }
   const ok = await commit(picks => {
@@ -734,7 +734,7 @@ async function addPick(k){
   });
   if(!ok) return;
   const L = slotLabel(k);
-  toast(cls + " 班選定 " + L.text + "（" + doneCount(cls) + " / " + MAXPICK + "）");
+  toast(cls + " 班選定 " + L.text + "（" + Math.min(before + 1, MAXPICK) + " / " + MAXPICK + "）");
 }
 async function dropPick(cls, k){
   const ok = await commit(picks => {
