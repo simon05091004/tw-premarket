@@ -5,11 +5,19 @@ on:
     # GitHub Actions 用 UTC。台北 06:45 = UTC 22:45（前一天）
     # 排程常延遲 5-15 分鐘，所以提前觸發，目標 07:00 前完成
     - cron: "38 22 * * 0-4"   # UTC 週日~週四 = 台北週一~週五（避開整點/半點壅塞）
+    # 備援：GitHub 高負載時會延遲 schedule，也可能整個丟掉不送 —— 2026-08-27
+    # 盤前就是這樣,連一筆 run 記錄都沒有。多排一次，第一次成功的話這次會在
+    # 抓資料與 API 之前就結束（見 main.py 的 report_exists 守衛），不花錢。
+    - cron: "10 23 * * 0-4"   # 台北 07:10，比開盤早 1 小時 50 分
   workflow_dispatch:           # 允許手動觸發（補跑用）
     inputs:
       target_date:
         description: "目標日期 YYYY-MM-DD（留空=今天）"
         required: false
+      force:
+        description: "報告已存在也重新產生（會再花一次 API 費用）"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -41,15 +49,17 @@ jobs:
         run: python -m unittest discover -s tests
 
       - name: 產生盤前分析
+        id: gen
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           CLAUDE_MODEL: claude-sonnet-5
         run: |
-          if [ -n "${{ inputs.target_date }}" ]; then
-            python -m premarket.main --date "${{ inputs.target_date }}"
-          else
-            python -m premarket.main
-          fi
+          # 用陣列組參數：shell 是 bash -e，寫成 [ -n "$x" ] && ARGS=... 的話
+          # 條件不成立會讓整個 step 以 exit 1 收場。
+          ARGS=()
+          if [ -n "${{ inputs.target_date }}" ]; then ARGS+=(--date "${{ inputs.target_date }}"); fi
+          if [ "${{ inputs.force }}" = "true" ]; then ARGS+=(--force); fi
+          python -m premarket.main "${ARGS[@]}"
 
       - name: 推回 repo
         run: |
@@ -64,8 +74,9 @@ jobs:
 
       # LINE 通知。沒設 secret 的人（例如 fork 的人）自動略過，不會讓 workflow 失敗。
       # 用 broadcast 而非 push：不需要知道自己的 userId，發給所有加好友的人即可。
+      # skipped 是備援排程那次：報告早就發過了，再廣播一次等於騷擾訂閱者。
       - name: LINE 通知
-        if: success() && env.LINE_TOKEN != ''
+        if: success() && env.LINE_TOKEN != '' && steps.gen.outputs.skipped != 'true'
         env:
           LINE_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           PAGES_URL: ${{ vars.PAGES_URL }}

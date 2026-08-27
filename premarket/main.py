@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
@@ -119,6 +120,25 @@ def is_trading_day(today: date) -> bool:
     return today.weekday() < 5
 
 
+def report_exists(today: date, spec: SessionSpec) -> bool:
+    """那天的報告是不是已經產出過了。"""
+    return (DOCS / f"{spec.out_stem}-{today.isoformat()}.md").exists()
+
+
+def signal_skipped() -> None:
+    """
+    告訴 workflow「這次沒產出新報告」。
+
+    LINE 通知那步的條件是 success(),光是提早 return 0 擋不住它 ——
+    備援那次會再廣播一則一模一樣的通知給所有訂閱者。
+    """
+    out = os.getenv("GITHUB_OUTPUT")
+    if not out:
+        return
+    with open(out, "a", encoding="utf-8") as f:
+        f.write("skipped=true\n")
+
+
 def load_prev_payload(prefix: str = "payload") -> dict | None:
     """前一份「同類型」報告的 payload —— 盤前盤後各自一組,不互相汙染。"""
     files = sorted(DATA.glob(f"{prefix}-*.json"))
@@ -160,6 +180,11 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true", help="不呼叫 API，只輸出 JSON")
     ap.add_argument("--date", help="覆寫目標日期 YYYY-MM-DD（回測／補跑用）")
     ap.add_argument(
+        "--force",
+        action="store_true",
+        help="報告已存在也重新產生（會再花一次 API 費用）",
+    )
+    ap.add_argument(
         "--session",
         choices=sorted(SPECS),
         default="premarket",
@@ -176,6 +201,17 @@ def main() -> int:
 
     if not is_trading_day(today):
         log.info("%s 非交易日，結束。", today)
+        return 0
+
+    # 備援排程用的守衛。GitHub 偶爾會把 schedule 事件整個丟掉 —— 2026-08-27 盤前
+    # 就是這樣,連一筆 run 記錄都沒有,那天等於開天窗。對策是同一天排兩次,
+    # 由這道守衛讓第二次在報告已存在時直接結束。
+    #
+    # 位置刻意放在抓資料與 API 之前：正常日子的備援那次不花 API 費用、
+    # 也不會多打證交所一輪。要重新產生同一天的報告請加 --force。
+    if not args.force and not args.dry_run and report_exists(today, spec):
+        log.info("%s 的報告已存在，略過（備援排程不重複產出；要重跑請加 --force）。", today)
+        signal_skipped()
         return 0
 
     prev = find_prev_trade_date(today)

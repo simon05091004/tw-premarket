@@ -224,6 +224,72 @@ class TestNonJsonRetries(unittest.TestCase):
         self.assertEqual(n, fetch.RETRIES)
 
 
+class TestBackupScheduleGuard(unittest.TestCase):
+    """
+    備援排程的守衛：報告已存在就不能再花一次 API 費用。
+
+    背景：2026-08-27 盤前的 schedule 事件被 GitHub 整個丟掉，連 run 記錄都沒有，
+    那天開天窗。對策是同一天排兩次 —— 但正常日子的第二次必須是零成本，
+    否則等於每天多付一份報告的錢，還會多廣播一則重複的 LINE 通知。
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmpdir = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+    def _run(self, extra_args=(), report_on_disk: bool = True):
+        """回傳 (exit code, generate_brief 的 mock)，好驗證 API 到底有沒有被呼叫。"""
+        if report_on_disk:
+            (self.tmpdir / f"postmarket-{DATE}.md").write_text("舊報告", encoding="utf-8")
+        with (
+            patch.object(main_mod, "DOCS", self.tmpdir),
+            patch.object(main_mod, "DATA", self.tmpdir / "data"),
+            patch.object(main_mod.fetch, "fetch_taiex_ohlc", return_value=[{"close": 1.0}]),
+            patch("premarket.fetch_post.build_postmarket_payload", return_value=StubPayload()),
+            patch.object(analyze, "generate_brief", return_value=GOOD_BRIEF) as brief,
+            patch.object(main_mod.render, "render", return_value="<html>x</html>"),
+        ):
+            sys.argv = ["premarket.main", "--session", "postmarket", "--date", DATE, *extra_args]
+            return main_mod.main(), brief
+
+    def test_existing_report_skips_api_call(self) -> None:
+        code, brief = self._run()
+        self.assertEqual(code, 0, "略過不是失敗，exit code 要是 0")
+        brief.assert_not_called()  # 這行就是「不會多花錢」的保證
+
+    def test_force_regenerates(self) -> None:
+        code, brief = self._run(extra_args=["--force"])
+        self.assertEqual(code, 0)
+        brief.assert_called_once()
+
+    def test_no_report_runs_normally(self) -> None:
+        code, brief = self._run(report_on_disk=False)
+        self.assertEqual(code, 0)
+        brief.assert_called_once()
+
+    def test_dry_run_not_blocked(self) -> None:
+        # dry-run 不呼叫 API 也不寫報告，沒有重複產出的問題，不該被守衛擋下
+        code, brief = self._run(extra_args=["--dry-run"])
+        self.assertEqual(code, 0)
+        brief.assert_not_called()
+        self.assertTrue((self.tmpdir / "data" / f"postpayload-{DATE}.json").exists())
+
+    def test_skip_signals_workflow_to_mute_line(self) -> None:
+        """略過時要寫 skipped=true 給 workflow，否則 LINE 會重複廣播。"""
+        out = self.tmpdir / "gh_output"
+        with patch.dict("os.environ", {"GITHUB_OUTPUT": str(out)}):
+            code, _ = self._run()
+        self.assertEqual(code, 0)
+        self.assertIn("skipped=true", out.read_text(encoding="utf-8"))
+
+    def test_normal_run_does_not_signal_skip(self) -> None:
+        out = self.tmpdir / "gh_output"
+        with patch.dict("os.environ", {"GITHUB_OUTPUT": str(out)}):
+            self._run(report_on_disk=False)
+        self.assertFalse(out.exists(), "有產出報告時不得寫 skipped，不然通知會被誤擋")
+
+
 class TestPrevTradeDateFallback(unittest.TestCase):
     """問不到加權指數時，改用歷史 payload 的日期回推前一交易日。"""
 
@@ -262,6 +328,9 @@ class TestPrevTradeDateFallback(unittest.TestCase):
     def test_main_aborts_when_both_sources_fail(self) -> None:
         with (
             patch.object(main_mod, "DATA", self.data),
+            # DOCS 也要導到暫存目錄：真實的 docs/ 已經有 DATE 那天的報告，
+            # 會先被「報告已存在」的守衛攔下，測不到這裡要驗的中止路徑。
+            patch.object(main_mod, "DOCS", self.data),
             patch.object(main_mod.fetch, "fetch_taiex_ohlc", return_value=None),
         ):
             sys.argv = ["premarket.main", "--session", "postmarket", "--date", DATE]
