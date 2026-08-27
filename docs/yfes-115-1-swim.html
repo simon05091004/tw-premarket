@@ -287,11 +287,15 @@ const CFG = {
   /* 額外限制：符合 wd + periods 的格子視為同一組，每個班合計最多 max 次 */
   limits: [
     {id:"tueAft", label:"週二下午限 1 次", max:1, wd:"星期二", periods:["a1","a2"],
-     msg:"週二的下午（一）、下午（二），每個班合計只能選 1 次"}
+     msg:"週二的下午（一）下午（二），每個班最多只能選 1 次"}
   ],
-  /* 額外說明，會列在標頭與分享頁 */
-  notes: ["4 個班以上同時選擇該時段，則抽籤或自行協調",
-          "請老師選擇三個時段時，務必核對該週是否為總導護，避免二者衝突"],
+  /* 說明欄：標頭與分享頁共用這份清單，順序即顯示順序 */
+  noteLines: [
+    "週二的下午（一）下午（二），每個班最多只能選 1 次",
+    "每個時段最多 8 個班",
+    "4 個班以上同時選擇該時段時，則以抽籤或自行協調決定",
+    "請各班選擇三個時段時，務必核對該週是否為總導護，避免二者衝突"
+  ],
   coordinateAt: 4         /* 一格累積到幾個班就亮出「需抽籤或協調」 */
 };
 const LS_KEY = "yfes-swim-115-1";
@@ -800,27 +804,16 @@ function renderHeader(){
   document.getElementById("hdTitle").textContent = CFG.title;
   const lede = document.getElementById("hdLede");
   lede.textContent = "";
-  lede.appendChild(document.createTextNode("每個班在下面 " + nWeeks() + "的表格中挑 "));
-  const b0 = document.createElement("b");
-  b0.textContent = MAXPICK + " 個時段";
-  lede.appendChild(b0);
-  lede.appendChild(document.createTextNode("（每班游 " + MAXPICK + " 次），每個時段最多排 "));
-  const b = document.createElement("b");
-  b.textContent = CFG.perCell + " 個班";
-  lede.appendChild(b);
-  lede.appendChild(document.createTextNode(CFG.firstCome === false ? "。" : "，先選先得。"));
-  (CFG.limits || []).map(L => L.msg).concat(CFG.notes || []).forEach(t => {
-    lede.appendChild(document.createElement("br"));
+  const lines = CFG.noteLines
+    || (CFG.limits || []).map(L => L.msg).concat(CFG.notes || []);
+  lines.forEach((t, i) => {
+    if(i) lede.appendChild(document.createElement("br"));
     lede.appendChild(document.createTextNode(t + "。"));
   });
   document.getElementById("hdDates").textContent =
     CFG.sessions.map(s => s.name + " " + s.days.filter(d => d.open.length).map(d => d.date).join("、")).join("　")
     + (CFG.tailNote ? "　·　" + CFG.tailNote : "");
-  lede.appendChild(document.createElement("br"));
-  const b2 = document.createElement("b");
-  b2.textContent = "被選走的時段不會消失";
-  lede.appendChild(b2);
-  lede.appendChild(document.createTextNode("，格子裡會直接標出是哪幾個班選的。"));
+
   document.title = CFG.title;
 }
 function renderAll(){ renderHeader(); renderChips(); renderSessions(); renderSummary(); renderSync(); }
