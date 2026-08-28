@@ -1,0 +1,1421 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>學生作業繳交清點</title>
+<meta name="description" content="掃描座號條碼即時登記作業繳交，未交名單一鍵複製">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#faf8f4">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@600;700&display=swap">
+<style>
+*{box-sizing:border-box}
+:root{
+  --paper:#faf8f4; --card:#ffffff; --sunk:#f4f1ea;
+  --ink:#1e1c19; --dim:#6d675e; --faint:#989185;
+  --line:#e4dfd5; --hair:#efebe2; --hatch:#eae6dc;
+  --ok:#1c7549; --ok-bg:#eaf6ef; --ok-ln:#b5dcc4;
+  --late:#a1670f; --late-bg:#fbf3e2; --late-ln:#e6d3a8;
+  --miss:#9c3412; --miss-bg:#fbeee7; --miss-ln:#eccdbe;
+  --blue:#1d5ba4; --blue-bg:#edf3fc; --blue-ln:#c3d7f0;
+  --focus:#1d5ba4;
+  --sh:0 1px 2px rgba(40,32,18,.05), 0 6px 18px -10px rgba(40,32,18,.18);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#1a1815; --card:#232019; --sunk:#1f1c17;
+    --ink:#ece6dc; --dim:#a09789; --faint:#7b7366;
+    --line:#35312a; --hair:#2b2822; --hatch:#26231d;
+    --ok:#5ec68e; --ok-bg:#172b20; --ok-ln:#2b543e;
+    --late:#e3a943; --late-bg:#332a17; --late-ln:#584825;
+    --miss:#f0a184; --miss-bg:#33211a; --miss-ln:#5c3527;
+    --blue:#7db0ef; --blue-bg:#1a2634; --blue-ln:#2e4864;
+    --focus:#7db0ef;
+    --sh:0 1px 2px rgba(0,0,0,.3), 0 6px 18px -10px rgba(0,0,0,.6);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#1a1815; --card:#232019; --sunk:#1f1c17;
+  --ink:#ece6dc; --dim:#a09789; --faint:#7b7366;
+  --line:#35312a; --hair:#2b2822; --hatch:#26231d;
+  --ok:#5ec68e; --ok-bg:#172b20; --ok-ln:#2b543e;
+  --late:#e3a943; --late-bg:#332a17; --late-ln:#584825;
+  --miss:#f0a184; --miss-bg:#33211a; --miss-ln:#5c3527;
+  --blue:#7db0ef; --blue-bg:#1a2634; --blue-ln:#2e4864;
+  --focus:#7db0ef;
+  --sh:0 1px 2px rgba(0,0,0,.3), 0 6px 18px -10px rgba(0,0,0,.6);
+}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);
+  font:16px/1.65 "Noto Sans TC",-apple-system,BlinkMacSystemFont,"PingFang TC","Microsoft JhengHei",sans-serif}
+.wrap{max-width:1000px;margin:0 auto;padding:32px 18px 72px;display:flex;flex-direction:column;gap:26px}
+.mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums}
+
+header{display:flex;flex-direction:column;gap:6px}
+.eyebrow{margin:0;font-size:12.5px;letter-spacing:.14em;color:var(--dim);font-weight:500}
+h1{margin:0;font-family:"Noto Serif TC",serif;font-weight:700;font-size:clamp(25px,4.4vw,33px);line-height:1.3}
+.lede{margin:2px 0 0;color:var(--dim);font-size:15px;max-width:64ch}
+.syncbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:13px;color:var(--dim)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--ok);flex:0 0 auto}
+.dot.local{background:var(--late)} .dot.bad{background:var(--miss)}
+
+.panel{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--sh)}
+.panel-hd{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;padding:18px 20px 0}
+.panel-bd{padding:14px 20px 20px;display:flex;flex-direction:column;gap:14px}
+h2{margin:0;font-family:"Noto Serif TC",serif;font-weight:600;font-size:19px}
+.kicker{font-size:11.5px;letter-spacing:.16em;color:var(--dim);font-weight:600;text-transform:uppercase}
+.hint{margin:0;font-size:13.5px;color:var(--dim)}
+.spacer{margin-left:auto}
+
+/* ---------- 日期列 ---------- */
+.daterow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.datebox{display:flex;align-items:center;gap:2px;border:1px solid var(--line);border-radius:11px;background:var(--sunk);padding:3px}
+.datebox button{appearance:none;border:0;background:transparent;color:var(--dim);cursor:pointer;
+  font-size:17px;line-height:1;padding:7px 11px;border-radius:8px}
+.datebox button:hover{background:var(--card);color:var(--ink)}
+.dlabel{font-family:"IBM Plex Mono",monospace;font-weight:600;font-size:16px;padding:0 8px;font-variant-numeric:tabular-nums}
+.dwd{color:var(--dim);font-size:13px;font-weight:500;margin-left:-4px;padding-right:6px}
+
+/* ---------- 項目分頁 ---------- */
+.tabs{display:flex;flex-wrap:wrap;gap:7px}
+.tab{appearance:none;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:11px;
+  padding:8px 13px;cursor:pointer;font-size:15px;font-weight:500;display:flex;align-items:center;gap:7px;
+  transition:border-color .12s,background .12s}
+.tab:hover{border-color:var(--dim)}
+.tab .n{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--faint);font-weight:600}
+.tab .st{font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--dim);font-variant-numeric:tabular-nums}
+.tab[aria-selected="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.tab[aria-selected="true"] .n,.tab[aria-selected="true"] .st{color:var(--paper);opacity:.66}
+.tab.done{border-color:var(--ok-ln);background:var(--ok-bg)}
+.tab.done[aria-selected="true"]{background:var(--ink);border-color:var(--ink)}
+
+/* ---------- 掃描區 ---------- */
+.scanzone{border:1px solid var(--line);border-radius:14px;background:var(--sunk);padding:14px;display:flex;flex-direction:column;gap:12px}
+.scanrow{display:flex;gap:10px;align-items:stretch;flex-wrap:wrap}
+#scanIn{flex:1 1 220px;min-width:0;font-family:"IBM Plex Mono",monospace;font-size:26px;font-weight:600;
+  letter-spacing:.12em;text-align:center;padding:12px 14px;border-radius:11px;border:2px solid var(--line);
+  background:var(--card);color:var(--ink);outline:none;font-variant-numeric:tabular-nums}
+#scanIn:focus{border-color:var(--focus);box-shadow:0 0 0 4px color-mix(in srgb,var(--focus) 16%,transparent)}
+#scanIn::placeholder{color:var(--faint);font-size:17px;letter-spacing:.02em;font-weight:400}
+.modesw{display:flex;border:1px solid var(--line);border-radius:11px;overflow:hidden;background:var(--card)}
+.modesw button{appearance:none;border:0;background:transparent;color:var(--dim);cursor:pointer;
+  padding:0 16px;font-size:14.5px;font-weight:600;font-family:inherit}
+.modesw button[aria-pressed="true"]{background:var(--ok);color:#fff}
+.modesw button.late[aria-pressed="true"]{background:var(--late);color:#fff}
+.feedback{border-radius:11px;padding:14px 16px;display:flex;align-items:center;gap:14px;min-height:76px;
+  border:1px solid var(--line);background:var(--card);transition:background .12s,border-color .12s}
+.feedback .big{font-family:"IBM Plex Mono",monospace;font-size:38px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.feedback .msg{font-size:16px;font-weight:600}
+.feedback .sub{font-size:13px;color:var(--dim);margin-top:2px}
+.feedback.ok{background:var(--ok-bg);border-color:var(--ok-ln)} .feedback.ok .big,.feedback.ok .msg{color:var(--ok)}
+.feedback.dup{background:var(--late-bg);border-color:var(--late-ln)} .feedback.dup .big,.feedback.dup .msg{color:var(--late)}
+.feedback.err{background:var(--miss-bg);border-color:var(--miss-ln)} .feedback.err .big,.feedback.err .msg{color:var(--miss)}
+.nofocus{display:none;align-items:center;gap:8px;font-size:13.5px;color:var(--miss);background:var(--miss-bg);
+  border:1px solid var(--miss-ln);border-radius:9px;padding:8px 12px;cursor:pointer}
+.nofocus.show{display:flex}
+.bar{height:8px;border-radius:99px;background:var(--hatch);overflow:hidden}
+.bar > i{display:block;height:100%;background:var(--ok);transition:width .18s}
+.tallyline{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;font-size:14px;color:var(--dim)}
+.tallyline b{font-family:"IBM Plex Mono",monospace;font-size:21px;color:var(--ink);font-weight:700;font-variant-numeric:tabular-nums}
+
+/* ---------- 座號網格 ---------- */
+.seats{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px}
+@media (min-width:620px){.seats{grid-template-columns:repeat(5,1fr)}}   /* 25 人剛好排成 5×5，像座位表 */
+.seat{appearance:none;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink);
+  border-radius:12px;padding:11px 6px 9px;display:flex;flex-direction:column;align-items:center;gap:3px;
+  transition:transform .07s,border-color .12s,background .12s}
+.seat:active{transform:translateY(1px)}
+.seat .no{font-family:"IBM Plex Mono",monospace;font-weight:700;font-size:23px;line-height:1;font-variant-numeric:tabular-nums}
+.seat .nm{font-size:12.5px;color:var(--dim);line-height:1.3;min-height:1em}
+.seat .mk{font-size:11.5px;font-weight:600;letter-spacing:.06em}
+.seat.s0{background:var(--card)} .seat.s0 .mk{color:var(--faint)}
+.seat.s1{background:var(--ok-bg);border-color:var(--ok-ln)} .seat.s1 .no,.seat.s1 .mk{color:var(--ok)}
+.seat.s2{background:var(--late-bg);border-color:var(--late-ln)} .seat.s2 .no,.seat.s2 .mk{color:var(--late)}
+.seat.flash{animation:pop .45s ease}
+@keyframes pop{0%{transform:scale(1)}30%{transform:scale(1.11)}100%{transform:scale(1)}}
+
+/* ---------- 未交名單 ---------- */
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.mchip{font-family:"IBM Plex Mono",monospace;font-size:14px;font-weight:600;background:var(--miss-bg);
+  color:var(--miss);border:1px solid var(--miss-ln);border-radius:9px;padding:5px 9px;font-variant-numeric:tabular-nums}
+.mchip .nm{font-family:"Noto Sans TC",sans-serif;font-weight:500;margin-left:4px}
+.allok{font-size:15px;color:var(--ok);font-weight:600}
+
+/* ---------- 表格 ---------- */
+.tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px}
+table.rep{border-collapse:collapse;width:100%;font-size:14px}
+table.rep th,table.rep td{border-bottom:1px solid var(--hair);padding:8px 10px;text-align:left;white-space:nowrap}
+table.rep thead th{background:var(--sunk);font-size:12px;letter-spacing:.06em;color:var(--dim);font-weight:600}
+table.rep tr:last-child td{border-bottom:0}
+table.rep td.num{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums}
+table.rep td.miss{color:var(--miss);white-space:normal}
+
+/* ---------- 按鈕 ---------- */
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+.btn{appearance:none;cursor:pointer;font-family:inherit;font-size:14.5px;font-weight:500;
+  border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:11px;padding:9px 15px;
+  transition:border-color .12s,background .12s}
+.btn:hover{border-color:var(--dim)}
+.btn:disabled{opacity:.5;cursor:default}
+.btn.pri{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.btn.warn{color:var(--miss);border-color:var(--miss-ln)}
+textarea{width:100%;min-height:96px;font-family:inherit;font-size:14.5px;line-height:1.7;padding:11px 13px;
+  border-radius:11px;border:1px solid var(--line);background:var(--sunk);color:var(--ink);resize:vertical}
+.foot{font-size:12.5px;color:var(--faint);text-align:center;line-height:1.9}
+.foot a{color:var(--dim)}
+
+/* ---------- toast ---------- */
+#toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(14px);opacity:0;
+  background:var(--ink);color:var(--paper);padding:11px 18px;border-radius:11px;font-size:14.5px;
+  pointer-events:none;transition:opacity .18s,transform .18s;z-index:50;max-width:88vw;text-align:center}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+@media (max-width:560px){
+  .wrap{padding:22px 13px 60px;gap:20px}
+  .panel-hd{padding:15px 15px 0} .panel-bd{padding:12px 15px 16px}
+  .seats{grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px}
+  .seat .no{font-size:20px}
+}
+@media print{
+  body{background:#fff}
+  .noprint{display:none !important}
+  .panel{box-shadow:none;border-color:#ccc;break-inside:avoid}
+  .wrap{padding:0;gap:14px;max-width:none}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <p class="eyebrow" id="hdEyebrow">永福國小</p>
+  <h1 id="hdTitle">學生作業繳交清點</h1>
+  <p class="lede" id="hdLede">用掃描槍掃座號條碼即可登記，也可以直接點座號格子。</p>
+  <div class="syncbar"><span class="dot" id="syncDot"></span><span id="syncText">啟動中…</span></div>
+</header>
+
+<section class="panel noprint">
+  <div class="panel-hd"><span class="kicker">STEP 1</span><h2>選日期與作業項目</h2>
+    <span class="hint spacer" id="dayNote"></span></div>
+  <div class="panel-bd">
+    <div class="daterow">
+      <div class="datebox">
+        <button type="button" id="dPrev" aria-label="前一天">‹</button>
+        <span class="dlabel" id="dLabel">—</span><span class="dwd" id="dWd"></span>
+        <button type="button" id="dNext" aria-label="後一天">›</button>
+      </div>
+      <button class="btn" type="button" id="dToday">今天</button>
+      <input type="date" id="dPick" class="btn" style="padding:8px 10px">
+    </div>
+    <div class="tabs" id="itemTabs"></div>
+    <div class="btns"><button class="btn" type="button" id="btnEditItems">編輯作業項目</button></div>
+  </div>
+</section>
+
+<section class="panel noprint">
+  <div class="panel-hd"><span class="kicker">STEP 2</span><h2>掃描登記</h2>
+    <span class="hint spacer" id="scanNote"></span></div>
+  <div class="panel-bd">
+    <div class="scanzone">
+      <div class="scanrow">
+        <input id="scanIn" type="text" inputmode="numeric" autocomplete="off" autocorrect="off"
+               autocapitalize="off" spellcheck="false" placeholder="掃描條碼，或輸入座號後按 Enter">
+        <div class="modesw" role="group" aria-label="登記狀態">
+          <button type="button" id="mOk" aria-pressed="true">已交</button>
+          <button type="button" id="mLate" class="late" aria-pressed="false">補交</button>
+        </div>
+      </div>
+      <div class="nofocus" id="noFocus">掃描框沒有焦點，掃進來的碼不會被記錄　·　點這裡重新對焦</div>
+      <div class="feedback" id="fb">
+        <div class="big mono" id="fbBig">—</div>
+        <div><div class="msg" id="fbMsg">等待掃描</div><div class="sub" id="fbSub">掃描槍請設定成「掃完自動送出 Enter」</div></div>
+      </div>
+      <div class="bar"><i id="prog" style="width:0%"></i></div>
+      <div class="tallyline"><b id="tOk">0</b><span>已交</span><b id="tLate">0</b><span>補交</span>
+        <b id="tMiss">0</b><span>未交</span><span class="spacer" id="tPct"></span></div>
+    </div>
+    <div class="btns">
+      <button class="btn" type="button" id="btnUndo">復原上一筆</button>
+      <button class="btn" type="button" id="btnAllOk">全班標為已交</button>
+      <button class="btn warn" type="button" id="btnClearItem">清除本項</button>
+    </div>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-hd"><span class="kicker">座號</span><h2 id="gridTitle">全班繳交狀況</h2>
+    <span class="hint spacer">點一下切換：未交 → 已交 → 補交</span></div>
+  <div class="panel-bd"><div class="seats" id="seats"></div></div>
+</section>
+
+<section class="panel">
+  <div class="panel-hd"><span class="kicker">未交</span><h2 id="missTitle">未交名單</h2>
+    <button class="btn spacer noprint" type="button" id="btnCopyMiss">複製未交名單</button></div>
+  <div class="panel-bd"><div id="missList"></div></div>
+</section>
+
+<section class="panel">
+  <div class="panel-hd"><span class="kicker">統計</span><h2>本學期累計未交</h2>
+    <span class="hint spacer" id="statNote"></span></div>
+  <div class="panel-bd"><div id="statBox"></div></div>
+</section>
+
+<section class="panel noprint">
+  <div class="panel-hd"><span class="kicker">名單</span><h2>學生姓名（可留空）</h2></div>
+  <div class="panel-bd">
+    <p class="hint">一行一位，依座號順序貼上即可；留空就只用座號。存檔後所有裝置都會看到。</p>
+    <textarea id="nameBox" placeholder="第 1 行 = 01 號&#10;第 2 行 = 02 號&#10;…"></textarea>
+    <div class="btns"><button class="btn pri" type="button" id="btnSaveNames">儲存名單</button>
+      <button class="btn" type="button" id="btnClearNames">清空名單</button></div>
+  </div>
+</section>
+
+<section class="panel noprint">
+  <div class="panel-hd"><span class="kicker">匯出</span><h2>存檔與列印</h2></div>
+  <div class="panel-bd">
+    <div class="btns">
+      <button class="btn pri" type="button" id="btnXlsx">下載 Excel</button>
+      <button class="btn" type="button" id="btnCsv">下載 CSV</button>
+      <button class="btn" type="button" id="btnPdf">下載 PDF</button>
+      <button class="btn" type="button" id="btnPrint">列印</button>
+      <a class="btn" id="lnkLabels" href="yfes-115-1-homework-labels.html" target="_blank" rel="noopener"
+         style="text-decoration:none;display:inline-flex;align-items:center">座號條碼標籤</a>
+    </div>
+    <p class="hint">Excel 含「本日清點」與「歷次紀錄」兩張工作表；PDF 是本日一頁的清點表。</p>
+  </div>
+</section>
+
+<p class="foot">永福國小　·　紀錄存在雲端，多台裝置即時同步<br>
+  <a href="yfes-115-1-homework-labels.html">列印座號條碼標籤</a></p>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   設定區 —— 要改班級、座號人數、預設作業項目，改這裡就好
+   ═══════════════════════════════════════════════════════════════ */
+const CFG = {
+  school: "永福國小",
+  term:   "115 學年度第一學期",
+  klass:  "六年一班",
+  title:  "學生作業繳交清點",
+  seats:  25,                     /* 班上人數 = 座號 01 … 25 */
+  ctrlItemFrom: 91,               /* 條碼 91–96 = 切換到第 1–6 個作業項目 */
+  ctrlMode: 97,                   /* 條碼 97 = 已交／補交 切換 */
+  ctrlUndo: 98                    /* 條碼 98 = 復原上一筆 */
+};
+const DEF_ITEMS = [
+  { id:"a", name:"國語習作" },
+  { id:"b", name:"數學習作" },
+  { id:"c", name:"聯絡簿" },
+  { id:"d", name:"閱讀紀錄" }
+];
+
+/* ═══════════════════════════════════════════════════════════════
+   狀態
+   rec["2026-08-28"]["a"] = "01,03*,07"   →  03 是補交
+   ═══════════════════════════════════════════════════════════════ */
+const LS_KEY = "yfes-hw-115-1";
+const pad2 = n => String(n).padStart(2, "0");
+const SEATS = () => { const a = []; for(let i = 1; i <= CFG.seats; i++) a.push(i); return a; };
+function todayKey(){ const d = new Date(); return d.getFullYear() + "-" + pad2(d.getMonth()+1) + "-" + pad2(d.getDate()); }
+
+let state = { items:DEF_ITEMS.slice(), names:[], rec:{}, updated:null };
+let curDate = todayKey();
+let curItem = DEF_ITEMS[0].id;
+let curMode = 1;                  /* 1 = 已交　2 = 補交 */
+const UNDO = [];
+function shiftDate(key, n){
+  const p = key.split("-").map(Number);
+  const d = new Date(p[0], p[1]-1, p[2]); d.setDate(d.getDate() + n);
+  return d.getFullYear() + "-" + pad2(d.getMonth()+1) + "-" + pad2(d.getDate());
+}
+const WD = ["日","一","二","三","四","五","六"];
+function wdOf(key){ const p = key.split("-").map(Number); return WD[new Date(p[0], p[1]-1, p[2]).getDay()]; }
+const dateShort = key => key.slice(5).replace("-", "/");
+
+const items = () => (state.items && state.items.length) ? state.items : DEF_ITEMS;
+const itemById = id => items().find(x => x.id === id) || items()[0];
+const nameOf = n => (state.names && state.names[n-1]) ? state.names[n-1] : "";
+const seatLabel = n => pad2(n) + (nameOf(n) ? " " + nameOf(n) : "");
+
+/** 這一格（某天某項目）的原始字串 */
+function cellRaw(rec, d, it){ return ((rec[d] || {})[it]) || ""; }
+/** 這一格有沒有被清點過 —— 至少有一位被標記才算 */
+function cellUsed(d, it){ return Object.prototype.hasOwnProperty.call(state.rec[d] || {}, it); }
+function statusOf(d, it, n){
+  const raw = cellRaw(state.rec, d, it);
+  if(!raw) return 0;
+  const tag = pad2(n);
+  const parts = raw.split(",");
+  for(let i = 0; i < parts.length; i++){
+    if(parts[i].slice(0, 2) === tag) return parts[i].charAt(2) === "*" ? 2 : 1;
+  }
+  return 0;
+}
+function withSeat(raw, n, st){
+  const tag = pad2(n);
+  const parts = raw ? raw.split(",").filter(x => x && x.slice(0, 2) !== tag) : [];
+  if(st === 1) parts.push(tag);
+  else if(st === 2) parts.push(tag + "*");
+  parts.sort();
+  return parts.join(",");
+}
+function setCell(rec, d, it, val){
+  const day = rec[d] || (rec[d] = {});
+  if(val) day[it] = val; else delete day[it];     /* 全空就整格移除 → 那天沒點過這一項 */
+  if(!Object.keys(day).length) delete rec[d];
+}
+const counts = (d, it) => {
+  let ok = 0, late = 0;
+  SEATS().forEach(n => { const s = statusOf(d, it, n); if(s === 1) ok++; else if(s === 2) late++; });
+  return { ok:ok, late:late, miss:CFG.seats - ok - late };
+};
+const missSeats = (d, it) => SEATS().filter(n => statusOf(d, it, n) === 0);
+
+/* ═══════════════════════════════════════════════════════════════
+   即時共用 —— 樂觀更新 ＋ 待送佇列，掃描不等網路
+   ═══════════════════════════════════════════════════════════════ */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyCp72sOo1c75i22m9FD_UQzPb9ApofE0bw",
+  authDomain: "family-ledger-e196d.firebaseapp.com",
+  projectId: "family-ledger-e196d",
+  storageBucket: "family-ledger-e196d.firebasestorage.app",
+  messagingSenderId: "931315534107",
+  appId: "1:931315534107:web:68aa8419d1d0b47948abbe"
+};
+const FIRE_COL = "hwCheck";
+const FIRE_ID  = "115-1";
+const FIRE_SDK = "https://www.gstatic.com/firebasejs/10.12.2/";
+
+const SYNC = { db:null, ref:null, unsub:null, mode:"local", note:"", timer:null, busy:false };
+const OPS = [];
+let DL = null;
+
+/** 一筆待送動作套到某份文件上；掃描是集合運算，重放不會互相蓋掉 */
+function applyOp(doc, o){
+  if(o.k === "s"){ setCell(doc.rec, o.d, o.it, withSeat(cellRaw(doc.rec, o.d, o.it), o.n, o.st)); return; }
+  if(o.k === "r"){ setCell(doc.rec, o.d, o.it, o.val); return; }
+  if(o.k === "i"){ doc.items = o.items; return; }
+  if(o.k === "n"){ doc.names = o.names; return; }
+}
+function mutate(op){
+  applyOp(state, op);
+  state.updated = new Date().toISOString();
+  OPS.push(op);
+  saveLocal(); renderAll(); queueFlush();
+}
+function loadLocal(){
+  try{
+    const raw = localStorage.getItem(LS_KEY);
+    if(!raw) return;
+    const d = JSON.parse(raw);
+    if(d && typeof d === "object"){
+      state.rec   = d.rec || {};
+      state.names = d.names || [];
+      if(d.items && d.items.length) state.items = d.items;
+      state.updated = d.updated || null;
+    }
+  }catch(e){}
+}
+function saveLocal(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){} }
+
+function loadScript(src){
+  return new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = src; s.async = false;
+    s.onload = res; s.onerror = () => rej(new Error("script " + src));
+    document.head.appendChild(s);
+  });
+}
+async function initRuntime(){
+  renderSync();
+  if(typeof window !== "undefined" && window.claude && typeof window.claude.use === "function"){
+    try{ DL = await window.claude.use("downloads"); }catch(e){ DL = null; }
+  }
+  if(FIREBASE_CONFIG){ await initFirebase(); return; }
+  SYNC.mode = "local"; renderSync();
+}
+async function initFirebase(){
+  SYNC.mode = "connecting"; renderSync();
+  try{
+    await loadScript(FIRE_SDK + "firebase-app-compat.js");
+    await loadScript(FIRE_SDK + "firebase-firestore-compat.js");
+    firebase.initializeApp(FIREBASE_CONFIG);
+    SYNC.db  = firebase.firestore();
+    SYNC.ref = SYNC.db.collection(FIRE_COL).doc(FIRE_ID);
+    SYNC.unsub = SYNC.ref.onSnapshot(
+      snap => {
+        const d = snap.exists ? (snap.data() || {}) : {};
+        state = {
+          items:(d.items && d.items.length) ? d.items : DEF_ITEMS.slice(),
+          names:d.names || [], rec:d.rec || {}, updated:d.updated || null
+        };
+        OPS.forEach(o => applyOp(state, o));      /* 還沒送出去的本機動作疊回來 */
+        if(!itemById(curItem) || !items().some(x => x.id === curItem)) curItem = items()[0].id;
+        SYNC.mode = "fire"; SYNC.note = "";
+        saveLocal(); renderAll();
+        if(OPS.length) queueFlush();          /* 連上線前累積的動作補送 */
+      },
+      err => {
+        SYNC.mode = "local";
+        SYNC.note = (err && err.code === "permission-denied")
+          ? "Firestore 規則尚未開放 " + FIRE_COL + "，紀錄只留在這台裝置"
+          : "即時共用連線失敗，紀錄只留在這台裝置";
+        renderSync();
+      }
+    );
+  }catch(e){
+    SYNC.mode = "local";
+    SYNC.note = "載入不到即時共用元件，紀錄只留在這台裝置";
+    renderSync();
+  }
+}
+function queueFlush(){
+  if(SYNC.mode !== "fire") return;
+  clearTimeout(SYNC.timer);
+  SYNC.timer = setTimeout(flush, 500);
+  renderSync();
+}
+async function flush(){
+  if(SYNC.mode !== "fire" || SYNC.busy || !OPS.length) return;
+  SYNC.busy = true; renderSync();
+  const batch = OPS.slice();
+  try{
+    await SYNC.db.runTransaction(async t => {
+      const snap = await t.get(SYNC.ref);
+      const d = snap.exists ? (snap.data() || {}) : {};
+      const doc = {
+        items:(d.items && d.items.length) ? d.items : DEF_ITEMS.slice(),
+        names:d.names || [],
+        rec:d.rec ? JSON.parse(JSON.stringify(d.rec)) : {}
+      };
+      batch.forEach(o => applyOp(doc, o));
+      t.set(SYNC.ref, { items:doc.items, names:doc.names, rec:doc.rec,
+                        updated:new Date().toISOString(), v:1 });
+    });
+    OPS.splice(0, batch.length);
+    SYNC.note = "";
+  }catch(e){
+    SYNC.note = "儲存失敗，稍後自動重試";
+    clearTimeout(SYNC.timer);
+    SYNC.timer = setTimeout(flush, 3000);
+  }finally{
+    SYNC.busy = false; renderSync();
+  }
+}
+function renderSync(){
+  const dot = document.getElementById("syncDot"), txt = document.getElementById("syncText");
+  if(!dot || !txt) return;
+  dot.className = "dot";
+  if(SYNC.note){ dot.classList.add("bad"); txt.textContent = SYNC.note; return; }
+  if(SYNC.mode === "fire"){
+    txt.textContent = (SYNC.busy || OPS.length) ? "儲存中…" : "即時共用中，其他裝置看到同一份紀錄";
+  }else if(SYNC.mode === "connecting"){
+    dot.classList.add("local"); txt.textContent = "連線中…";
+  }else{
+    dot.classList.add("local"); txt.textContent = "紀錄存在這台裝置的瀏覽器";
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   畫面
+   ═══════════════════════════════════════════════════════════════ */
+function el(tag, cls, txt){
+  const e = document.createElement(tag);
+  if(cls) e.className = cls;
+  if(txt != null) e.textContent = txt;
+  return e;
+}
+function toast(msg){
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.classList.add("show");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.remove("show"), 2600);
+}
+function fmtStamp(d){
+  const z = n => String(n).padStart(2, "0");
+  return d.getFullYear() + "/" + z(d.getMonth()+1) + "/" + z(d.getDate()) + " " + z(d.getHours()) + ":" + z(d.getMinutes());
+}
+
+function renderHeader(){
+  document.getElementById("hdEyebrow").textContent = CFG.school + "　·　" + CFG.term + "　·　" + CFG.klass;
+  document.getElementById("hdTitle").textContent = CFG.title;
+  document.title = CFG.klass + " " + CFG.title;
+}
+function renderDate(){
+  document.getElementById("dLabel").textContent = curDate.replace(/-/g, "/");
+  document.getElementById("dWd").textContent = "（" + wdOf(curDate) + "）";
+  document.getElementById("dPick").value = curDate;
+  const note = document.getElementById("dayNote");
+  note.textContent = curDate === todayKey() ? "今天" : "檢視 " + dateShort(curDate) + " 的紀錄";
+}
+function renderTabs(){
+  const box = document.getElementById("itemTabs");
+  box.textContent = "";
+  items().forEach((it, i) => {
+    const c = counts(curDate, it.id);
+    const b = el("button", "tab");
+    b.type = "button";
+    b.setAttribute("aria-selected", it.id === curItem ? "true" : "false");
+    if(cellUsed(curDate, it.id) && c.miss === 0) b.classList.add("done");
+    b.appendChild(el("span", "n", pad2(CFG.ctrlItemFrom + i)));
+    b.appendChild(el("span", null, it.name));
+    b.appendChild(el("span", "st", c.ok + c.late + "/" + CFG.seats));
+    b.addEventListener("click", () => { curItem = it.id; renderAll(); refocus(); });
+    box.appendChild(b);
+  });
+}
+function renderSeats(){
+  const box = document.getElementById("seats");
+  box.textContent = "";
+  const MK = ["未交", "已交", "補交"];
+  SEATS().forEach(n => {
+    const st = statusOf(curDate, curItem, n);
+    const b = el("button", "seat s" + st);
+    b.type = "button"; b.dataset.n = String(n);
+    b.appendChild(el("span", "no", pad2(n)));
+    b.appendChild(el("span", "nm", nameOf(n)));
+    b.appendChild(el("span", "mk", MK[st]));
+    b.addEventListener("click", () => {
+      const prev = statusOf(curDate, curItem, n);
+      mutate({ k:"s", d:curDate, it:curItem, n:n, st:(prev + 1) % 3 });
+      UNDO.push({ d:curDate, it:curItem, n:n, prev:prev });
+      if(UNDO.length > 60) UNDO.shift();
+      flashSeat(n);
+      refocus();
+    });
+    box.appendChild(b);
+  });
+  document.getElementById("gridTitle").textContent = itemById(curItem).name + "　全班繳交狀況";
+}
+function flashSeat(n){
+  const b = document.querySelector('.seat[data-n="' + n + '"]');
+  if(!b) return;
+  b.classList.remove("flash"); void b.offsetWidth; b.classList.add("flash");
+}
+function renderTally(){
+  const c = counts(curDate, curItem);
+  document.getElementById("tOk").textContent = c.ok;
+  document.getElementById("tLate").textContent = c.late;
+  document.getElementById("tMiss").textContent = c.miss;
+  const pct = Math.round((c.ok + c.late) / CFG.seats * 100);
+  document.getElementById("prog").style.width = pct + "%";
+  document.getElementById("tPct").textContent = pct + "%　" + itemById(curItem).name;
+  document.getElementById("scanNote").textContent =
+    (curMode === 2 ? "補交模式" : "已交模式") + "　·　" + itemById(curItem).name;
+}
+function renderMiss(){
+  const box = document.getElementById("missList");
+  box.textContent = "";
+  document.getElementById("missTitle").textContent =
+    dateShort(curDate) + "　" + itemById(curItem).name + "　未交名單";
+  const m = missSeats(curDate, curItem);
+  if(!m.length){ box.appendChild(el("p", "allok", "全班 " + CFG.seats + " 位都交了")); return; }
+  const chips = el("div", "chips");
+  m.forEach(n => {
+    const c = el("span", "mchip", pad2(n));
+    if(nameOf(n)) c.appendChild(el("span", "nm", nameOf(n)));
+    chips.appendChild(c);
+  });
+  box.appendChild(chips);
+  box.appendChild(el("p", "hint", "共 " + m.length + " 位未交"));
+}
+function statRows(){
+  const rows = SEATS().map(n => ({ n:n, miss:0, late:0 }));
+  let checked = 0;
+  Object.keys(state.rec).sort().forEach(d => {
+    items().forEach(it => {
+      if(!cellUsed(d, it.id)) return;
+      checked++;
+      SEATS().forEach(n => {
+        const s = statusOf(d, it.id, n);
+        if(s === 0) rows[n-1].miss++;
+        else if(s === 2) rows[n-1].late++;
+      });
+    });
+  });
+  return { rows:rows, checked:checked };
+}
+function renderStats(){
+  const box = document.getElementById("statBox");
+  box.textContent = "";
+  const S = statRows();
+  document.getElementById("statNote").textContent = "已清點 " + S.checked + " 次";
+  if(!S.checked){ box.appendChild(el("p", "hint", "還沒有任何清點紀錄。")); return; }
+  const bad = S.rows.filter(r => r.miss > 0 || r.late > 0)
+                    .sort((a, b) => (b.miss - a.miss) || (b.late - a.late) || (a.n - b.n));
+  if(!bad.length){ box.appendChild(el("p", "allok", "全部 " + S.checked + " 次清點都是全班到齊")); return; }
+  const w = el("div", "tblwrap"), t = el("table", "rep");
+  const th = el("thead"), tr = el("tr");
+  ["座號", "姓名", "未交", "補交", "清點次數"].forEach(h => tr.appendChild(el("th", null, h)));
+  th.appendChild(tr); t.appendChild(th);
+  const tb = el("tbody");
+  bad.forEach(r => {
+    const row = el("tr");
+    row.appendChild(el("td", "num", pad2(r.n)));
+    row.appendChild(el("td", null, nameOf(r.n) || "—"));
+    row.appendChild(el("td", "num" + (r.miss ? " miss" : ""), String(r.miss)));
+    row.appendChild(el("td", "num", String(r.late)));
+    row.appendChild(el("td", "num", String(S.checked)));
+    tb.appendChild(row);
+  });
+  t.appendChild(tb); w.appendChild(t); box.appendChild(w);
+}
+function renderNames(){
+  const ta = document.getElementById("nameBox");
+  if(document.activeElement === ta) return;
+  ta.value = (state.names || []).join("\n");
+}
+function renderAll(){
+  renderHeader(); renderDate(); renderTabs(); renderSeats();
+  renderTally(); renderMiss(); renderStats(); renderNames(); renderSync();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   掃描
+   ═══════════════════════════════════════════════════════════════ */
+const scanIn = () => document.getElementById("scanIn");
+const KEYBOARD_MODE = !(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+let SCAN_TIMER = null;
+let AC = null;
+
+function beep(kind){
+  try{
+    AC = AC || new (window.AudioContext || window.webkitAudioContext)();
+    if(AC.state === "suspended") AC.resume();
+    const seq = kind === "ok"  ? [[920, 0, .085]]
+              : kind === "dup" ? [[600, 0, .07], [600, .105, .07]]
+              :                  [[196, 0, .3]];
+    seq.forEach(p => {
+      const o = AC.createOscillator(), g = AC.createGain();
+      o.type = kind === "err" ? "square" : "sine";
+      o.frequency.value = p[0];
+      const t0 = AC.currentTime + p[1];
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(kind === "err" ? .18 : .25, t0 + .012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + p[2]);
+      o.connect(g); g.connect(AC.destination);
+      o.start(t0); o.stop(t0 + p[2] + .03);
+    });
+  }catch(e){}
+}
+function buzz(ms){ try{ if(navigator.vibrate) navigator.vibrate(ms); }catch(e){} }
+function feedback(kind, big, msg, sub){
+  const fb = document.getElementById("fb");
+  const cls = (kind === "ok" || kind === "dup" || kind === "err") ? kind : "";
+  fb.className = "feedback" + (cls ? " " + cls : "");
+  document.getElementById("fbBig").textContent = big;
+  document.getElementById("fbMsg").textContent = msg;
+  document.getElementById("fbSub").textContent = sub || "";
+  beep(kind === "err" ? "err" : kind === "dup" ? "dup" : "ok");
+  buzz(kind === "err" ? 160 : kind === "dup" ? [22, 60, 22] : 28);
+}
+
+/** 掃進來的字串 → 動作。相容座號、S07、以及 QR 掃出來的整串網址 */
+function parseCode(raw){
+  const s = String(raw == null ? "" : raw).trim();
+  if(!s) return null;
+  let m = s.match(/[?&#]s=(\d{1,3})/i);
+  if(!m) m = s.match(/^(?:[Ss]|座號)?0*(\d{1,3})$/);
+  if(!m) return { type:"bad", raw:s };
+  const n = parseInt(m[1], 10);
+  if(n >= 1 && n <= CFG.seats) return { type:"seat", n:n };
+  const idx = n - CFG.ctrlItemFrom;
+  if(idx >= 0 && idx < 6) return { type:"item", i:idx };
+  if(n === CFG.ctrlMode) return { type:"mode" };
+  if(n === CFG.ctrlUndo) return { type:"undo" };
+  return { type:"bad", raw:s };
+}
+function submitScan(raw){
+  const c = parseCode(raw);
+  if(!c) return;
+  if(c.type === "bad"){
+    feedback("err", "✕", "無法辨識：" + c.raw.slice(0, 24), "座號請掃 01–" + pad2(CFG.seats) + " 的條碼");
+    return;
+  }
+  if(c.type === "item"){
+    const list = items();
+    if(c.i >= list.length){ feedback("err", "✕", "沒有第 " + (c.i+1) + " 個作業項目", ""); return; }
+    curItem = list[c.i].id; renderAll();
+    feedback("info", "▸", "切換到「" + list[c.i].name + "」", "接著掃學生座號");
+    return;
+  }
+  if(c.type === "mode"){
+    setMode(curMode === 1 ? 2 : 1);
+    feedback("info", "▸", curMode === 2 ? "改成補交模式" : "改回已交模式", "接著掃的座號都會記成" + (curMode === 2 ? "補交" : "已交"));
+    return;
+  }
+  if(c.type === "undo"){ doUndo(); return; }
+
+  const n = c.n, prev = statusOf(curDate, curItem, n);
+  if(prev === curMode){
+    feedback("dup", pad2(n), pad2(n) + " " + (nameOf(n) || "") + " 已經登記過了",
+             (curMode === 2 ? "補交" : "已交") + "　·　" + itemById(curItem).name + "　·　重複掃描不會重複計算");
+    flashSeat(n);
+    return;
+  }
+  mutate({ k:"s", d:curDate, it:curItem, n:n, st:curMode });
+  UNDO.push({ d:curDate, it:curItem, n:n, prev:prev });
+  if(UNDO.length > 60) UNDO.shift();
+  const c2 = counts(curDate, curItem);
+  feedback("ok", pad2(n), pad2(n) + " " + (nameOf(n) || "") + "　" + (curMode === 2 ? "補交" : "已交"),
+           itemById(curItem).name + "　·　已收 " + (c2.ok + c2.late) + " / " + CFG.seats + "　·　還差 " + c2.miss + " 位");
+  flashSeat(n);
+}
+function doUndo(){
+  const u = UNDO.pop();
+  if(!u){ feedback("err", "✕", "沒有可以復原的動作", ""); return; }
+  if(u.raw){
+    mutate({ k:"r", d:u.d, it:u.it, val:u.val });
+    feedback("dup", "↺", "已復原「" + itemById(u.it).name + "」整批動作", dateShort(u.d));
+    return;
+  }
+  mutate({ k:"s", d:u.d, it:u.it, n:u.n, st:u.prev });
+  const MK = ["未交", "已交", "補交"];
+  feedback("dup", pad2(u.n), "已復原 " + pad2(u.n) + " → " + MK[u.prev], dateShort(u.d) + "　" + itemById(u.it).name);
+  flashSeat(u.n);
+}
+function setMode(m){
+  curMode = m;
+  document.getElementById("mOk").setAttribute("aria-pressed", m === 1 ? "true" : "false");
+  document.getElementById("mLate").setAttribute("aria-pressed", m === 2 ? "true" : "false");
+  renderTally();
+}
+function refocus(){
+  if(!KEYBOARD_MODE) return;
+  try{ scanIn().focus(); }catch(e){}
+}
+function checkFocus(){
+  const a = document.activeElement, tag = a ? a.tagName : "";
+  const typing = (tag === "TEXTAREA" || tag === "SELECT" || (tag === "INPUT" && a !== scanIn()));
+  const bad = KEYBOARD_MODE && !typing && a !== scanIn();
+  document.getElementById("noFocus").classList.toggle("show", !!bad);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   匯出：ZIP(store) → XLSX ／ CSV ／ canvas → PDF
+   ═══════════════════════════════════════════════════════════════ */
+const sheetTitle = () => CFG.school + " " + CFG.klass + "　" + CFG.title;
+const fileBase   = () => (CFG.klass + CFG.title).replace(/[\\/:*?"<>|\s]+/g, "");
+function fileStamp(){ return curDate.replace(/-/g, ""); }
+
+const CRCT = (() => {
+  const t = new Uint32Array(256);
+  for(let n = 0; n < 256; n++){
+    let c = n;
+    for(let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(u8){
+  let c = 0xFFFFFFFF;
+  for(let i = 0; i < u8.length; i++) c = CRCT[(c ^ u8[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function zipStore(files){
+  const enc = new TextEncoder(), chunks = [], dir = [];
+  const now = new Date();
+  const dosT = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+  const dosD = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+  let off = 0;
+  files.forEach(f => {
+    const name = enc.encode(f.name);
+    const data = (typeof f.data === "string") ? enc.encode(f.data) : f.data;
+    const crc = crc32(data);
+    const h = new Uint8Array(30 + name.length), v = new DataView(h.buffer);
+    v.setUint32(0, 0x04034b50, true); v.setUint16(4, 20, true); v.setUint16(6, 0x0800, true);
+    v.setUint16(8, 0, true); v.setUint16(10, dosT, true); v.setUint16(12, dosD, true);
+    v.setUint32(14, crc, true); v.setUint32(18, data.length, true); v.setUint32(22, data.length, true);
+    v.setUint16(26, name.length, true); v.setUint16(28, 0, true);
+    h.set(name, 30);
+    chunks.push(h, data);
+    dir.push({ name:name, crc:crc, size:data.length, off:off, t:dosT, d:dosD });
+    off += h.length + data.length;
+  });
+  const cdStart = off;
+  dir.forEach(c => {
+    const h = new Uint8Array(46 + c.name.length), v = new DataView(h.buffer);
+    v.setUint32(0, 0x02014b50, true); v.setUint16(4, 20, true); v.setUint16(6, 20, true);
+    v.setUint16(8, 0x0800, true); v.setUint16(10, 0, true);
+    v.setUint16(12, c.t, true); v.setUint16(14, c.d, true);
+    v.setUint32(16, c.crc, true); v.setUint32(20, c.size, true); v.setUint32(24, c.size, true);
+    v.setUint16(28, c.name.length, true); v.setUint16(30, 0, true); v.setUint16(32, 0, true);
+    v.setUint16(34, 0, true); v.setUint16(36, 0, true); v.setUint32(38, 0, true);
+    v.setUint32(42, c.off, true);
+    h.set(c.name, 46);
+    chunks.push(h); off += h.length;
+  });
+  const e = new Uint8Array(22), ev = new DataView(e.buffer);
+  ev.setUint32(0, 0x06054b50, true); ev.setUint16(4, 0, true); ev.setUint16(6, 0, true);
+  ev.setUint16(8, dir.length, true); ev.setUint16(10, dir.length, true);
+  ev.setUint32(12, off - cdStart, true); ev.setUint32(16, cdStart, true); ev.setUint16(20, 0, true);
+  chunks.push(e); off += 22;
+  const out = new Uint8Array(off);
+  let p = 0;
+  chunks.forEach(c => { out.set(c, p); p += c.length; });
+  return out;
+}
+const xe = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  .replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+const colName = n => { let s = ""; n++; while(n > 0){ const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = (n - 1 - r) / 26; } return s; };
+function sheetXml(rows, cols, merges, heights){
+  let x = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">';
+  if(cols && cols.length){
+    x += "<cols>";
+    cols.forEach(c => { x += '<col min="' + c.min + '" max="' + c.max + '" width="' + c.w + '" customWidth="1"/>'; });
+    x += "</cols>";
+  }
+  x += "<sheetData>";
+  rows.forEach((row, ri) => {
+    const h = heights && heights[ri];
+    x += '<row r="' + (ri + 1) + '"' + (h ? ' ht="' + h + '" customHeight="1"' : "") + ">";
+    row.forEach((cell, ci) => {
+      if(cell == null) return;
+      const ref = colName(ci) + (ri + 1);
+      const s = cell.s ? ' s="' + cell.s + '"' : "";
+      if(cell.v === "" || cell.v == null) x += '<c r="' + ref + '"' + s + "/>";
+      else x += '<c r="' + ref + '"' + s + ' t="inlineStr"><is><t xml:space="preserve">' + xe(cell.v) + "</t></is></c>";
+    });
+    x += "</row>";
+  });
+  x += "</sheetData>";
+  if(merges && merges.length){
+    x += '<mergeCells count="' + merges.length + '">';
+    merges.forEach(m => { x += '<mergeCell ref="' + m + '"/>'; });
+    x += "</mergeCells>";
+  }
+  return x + "</worksheet>";
+}
+const STYLES_XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
++ '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
++ '<fonts count="6">'
++ '<font><sz val="11"/><name val="Calibri"/></font>'
++ '<font><b/><sz val="11"/><name val="Calibri"/></font>'
++ '<font><b/><sz val="15"/><name val="Calibri"/></font>'
++ '<font><sz val="10"/><color rgb="FF6D675E"/><name val="Calibri"/></font>'
++ '<font><b/><sz val="11"/><color rgb="FF9C3412"/><name val="Calibri"/></font>'
++ '<font><b/><sz val="11"/><color rgb="FF1C7549"/><name val="Calibri"/></font>'
++ '</fonts>'
++ '<fills count="5">'
++ '<fill><patternFill patternType="none"/></fill>'
++ '<fill><patternFill patternType="gray125"/></fill>'
++ '<fill><patternFill patternType="solid"><fgColor rgb="FFF2EFE8"/><bgColor indexed="64"/></patternFill></fill>'
++ '<fill><patternFill patternType="solid"><fgColor rgb="FFFBEEE7"/><bgColor indexed="64"/></patternFill></fill>'
++ '<fill><patternFill patternType="solid"><fgColor rgb="FFEAF6EF"/><bgColor indexed="64"/></patternFill></fill>'
++ '</fills>'
++ '<borders count="2">'
++ '<border><left/><right/><top/><bottom/><diagonal/></border>'
++ '<border><left style="thin"><color rgb="FFC3BDB2"/></left><right style="thin"><color rgb="FFC3BDB2"/></right>'
++ '<top style="thin"><color rgb="FFC3BDB2"/></top><bottom style="thin"><color rgb="FFC3BDB2"/></bottom><diagonal/></border>'
++ '</borders>'
++ '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
++ '<cellXfs count="8">'
++ '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
++ '<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center"/></xf>'
++ '<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="center"/></xf>'
++ '<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>'
++ '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>'
++ '<xf numFmtId="0" fontId="4" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>'
++ '<xf numFmtId="0" fontId="5" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>'
++ '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center" wrapText="1"/></xf>'
++ '</cellXfs></styleSheet>';
+const S_TITLE = 1, S_SUB = 2, S_HEAD = 3, S_CELL = 4, S_MISS = 5, S_OK = 6, S_LEFT = 7;
+
+const MARK = ["✕", "○", "△"];
+function usedCells(){
+  const out = [];
+  Object.keys(state.rec).sort().forEach(d => {
+    items().forEach(it => { if(cellUsed(d, it.id)) out.push({ d:d, it:it }); });
+  });
+  return out;
+}
+function buildXlsx(){
+  const its = items(), nCol = 3 + its.length;
+  /* --- sheet1 本日清點 --- */
+  const r1 = [];
+  r1.push([{ v:sheetTitle(), s:S_TITLE }]);
+  r1.push([{ v:curDate.replace(/-/g, "/") + "（" + wdOf(curDate) + "）　○ 已交　△ 補交　✕ 未交　·　產出 " + fmtStamp(new Date()), s:S_SUB }]);
+  r1.push([]);
+  const hd = [{ v:"座號", s:S_HEAD }, { v:"姓名", s:S_HEAD }];
+  its.forEach(it => hd.push({ v:it.name, s:S_HEAD }));
+  hd.push({ v:"未交項數", s:S_HEAD });
+  r1.push(hd);
+  SEATS().forEach(n => {
+    const row = [{ v:pad2(n), s:S_CELL }, { v:nameOf(n), s:S_LEFT }];
+    let miss = 0;
+    its.forEach(it => {
+      const s = statusOf(curDate, it.id, n);
+      if(s === 0) miss++;
+      row.push({ v:MARK[s], s:s === 0 ? S_MISS : S_OK });
+    });
+    row.push({ v:String(miss), s:miss ? S_MISS : S_CELL });
+    r1.push(row);
+  });
+  const tot = [{ v:"已交", s:S_HEAD }, { v:"", s:S_HEAD }];
+  its.forEach(it => { const c = counts(curDate, it.id); tot.push({ v:(c.ok + c.late) + " / " + CFG.seats, s:S_HEAD }); });
+  tot.push({ v:"", s:S_HEAD });
+  r1.push(tot);
+  const cols1 = [{ min:1, max:1, w:7 }, { min:2, max:2, w:12 }, { min:3, max:nCol, w:12 }];
+  const merges1 = ["A1:" + colName(nCol - 1) + "1", "A2:" + colName(nCol - 1) + "2"];
+  const heights1 = [26, 18, 8, 24];
+
+  /* --- sheet2 歷次紀錄 --- */
+  const cells = usedCells();
+  const r2 = [];
+  r2.push([{ v:CFG.klass + " 歷次清點紀錄", s:S_TITLE }]);
+  r2.push([{ v:"共 " + cells.length + " 次清點　·　產出 " + fmtStamp(new Date()), s:S_SUB }]);
+  r2.push([]);
+  const h2 = ["日期", "星期", "作業項目", "已交", "補交", "未交", "未交座號"].map(h => ({ v:h, s:S_HEAD }));
+  r2.push(h2);
+  cells.slice().reverse().forEach(x => {
+    const c = counts(x.d, x.it.id), m = missSeats(x.d, x.it.id);
+    r2.push([
+      { v:x.d.replace(/-/g, "/"), s:S_CELL }, { v:wdOf(x.d), s:S_CELL },
+      { v:x.it.name, s:S_LEFT }, { v:String(c.ok), s:S_CELL },
+      { v:String(c.late), s:S_CELL }, { v:String(c.miss), s:c.miss ? S_MISS : S_CELL },
+      { v:m.map(n => seatLabel(n)).join("、"), s:S_LEFT }
+    ]);
+  });
+  const cols2 = [{ min:1, max:1, w:12 }, { min:2, max:2, w:6 }, { min:3, max:3, w:14 },
+                 { min:4, max:6, w:7 }, { min:7, max:7, w:60 }];
+  const merges2 = ["A1:G1", "A2:G2"];
+  const heights2 = [26, 18, 8, 24];
+
+  const files = [
+    { name:"[Content_Types].xml", data:
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+      + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+      + '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+      + '<Default Extension="xml" ContentType="application/xml"/>'
+      + '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+      + '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+      + '<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+      + '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
+      + '</Types>' },
+    { name:"_rels/.rels", data:
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+      + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+      + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+      + '</Relationships>' },
+    { name:"xl/workbook.xml", data:
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+      + '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+      + '<sheets><sheet name="本日清點" sheetId="1" r:id="rId1"/><sheet name="歷次紀錄" sheetId="2" r:id="rId2"/></sheets>'
+      + '</workbook>' },
+    { name:"xl/_rels/workbook.xml.rels", data:
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+      + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+      + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+      + '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>'
+      + '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
+      + '</Relationships>' },
+    { name:"xl/styles.xml", data:STYLES_XML },
+    { name:"xl/worksheets/sheet1.xml", data:sheetXml(r1, cols1, merges1, heights1) },
+    { name:"xl/worksheets/sheet2.xml", data:sheetXml(r2, cols2, merges2, heights2) }
+  ];
+  return zipStore(files);
+}
+function buildCsv(){
+  const its = items(), q = s => '"' + String(s).replace(/"/g, '""') + '"';
+  const lines = [];
+  lines.push([sheetTitle() + "　" + curDate.replace(/-/g, "/")].map(q).join(","));
+  lines.push(["○ 已交　△ 補交　✕ 未交"].map(q).join(","));
+  lines.push(["座號", "姓名"].concat(its.map(i => i.name)).concat(["未交項數"]).map(q).join(","));
+  SEATS().forEach(n => {
+    const row = [pad2(n), nameOf(n)];
+    let miss = 0;
+    its.forEach(it => { const s = statusOf(curDate, it.id, n); if(s === 0) miss++; row.push(MARK[s]); });
+    row.push(String(miss));
+    lines.push(row.map(q).join(","));
+  });
+  lines.push("");
+  lines.push(["歷次清點紀錄"].map(q).join(","));
+  lines.push(["日期", "星期", "作業項目", "已交", "補交", "未交", "未交座號"].map(q).join(","));
+  usedCells().slice().reverse().forEach(x => {
+    const c = counts(x.d, x.it.id), m = missSeats(x.d, x.it.id);
+    lines.push([x.d, wdOf(x.d), x.it.name, c.ok, c.late, c.miss, m.map(n => seatLabel(n)).join("、")].map(q).join(","));
+  });
+  return "﻿" + lines.join("\r\n") + "\r\n";
+}
+
+/* ---------- 畫成 A4 直式表格 → PDF ---------- */
+const PC = { ink:"#1e1c19", dim:"#6d675e", faint:"#a9a297", line:"#c9c3b8", hair:"#ded8cd",
+             head:"#f4f2ec", rowh:"#faf9f6", ok:"#186640", late:"#8f5a0b", miss:"#9c3412",
+             okbg:"#eaf6ef", latebg:"#fbf3e2", missbg:"#fbeee7" };
+const FS = '"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif';
+const FM = '"IBM Plex Mono",ui-monospace,Menlo,monospace';
+
+function renderSheetCanvas(scale){
+  const its = items();
+  const PAD = 30, C0 = 52, C1 = 92, CW = Math.max(78, Math.min(120, 430 / its.length));
+  const HT = 76, HH = 34, RH = 25;
+  const tableW = C0 + C1 + its.length * CW;
+  const W = tableW + PAD * 2;
+  const top = PAD + HT;
+  const tableH = HH + CFG.seats * RH;
+  const missTxt = its.map(it => it.name + "：" + (missSeats(curDate, it.id).map(n => pad2(n)).join("、") || "全到齊"));
+  const FT = 22 + missTxt.length * 16;
+  const H = top + tableH + FT + PAD;
+
+  const cv = document.createElement("canvas");
+  cv.width = Math.round(W * scale); cv.height = Math.round(H * scale);
+  const g = cv.getContext("2d");
+  g.setTransform(scale, 0, 0, scale, 0, 0);
+  g.fillStyle = "#ffffff"; g.fillRect(0, 0, W, H);
+  g.textBaseline = "middle";
+  const txt = (s, x, y, font, color, align) => { g.font = font; g.fillStyle = color; g.textAlign = align || "center"; g.fillText(s, x, y); };
+  const box = (x, y, w, h, fill) => { g.fillStyle = fill; g.fillRect(x, y, w, h); };
+  const line = (x1, y1, x2, y2, color, lw) => { g.strokeStyle = color; g.lineWidth = lw || 1; g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); };
+
+  txt(sheetTitle(), W / 2, PAD + 20, '700 21px ' + FS, PC.ink);
+  txt(curDate.replace(/-/g, "/") + "（" + wdOf(curDate) + "）　·　○ 已交　△ 補交　✕ 未交　·　產出 " + fmtStamp(new Date()),
+      W / 2, PAD + 48, '400 11.5px ' + FS, PC.dim);
+
+  const cx = i => PAD + C0 + C1 + i * CW;
+  box(PAD, top, C0, HH, PC.head); txt("座號", PAD + C0 / 2, top + HH / 2, '600 12px ' + FS, PC.dim);
+  box(PAD + C0, top, C1, HH, PC.head); txt("姓名", PAD + C0 + C1 / 2, top + HH / 2, '600 12px ' + FS, PC.dim);
+  its.forEach((it, i) => {
+    box(cx(i), top, CW, HH, PC.head);
+    txt(it.name, cx(i) + CW / 2, top + HH / 2 - 6, '700 12.5px ' + FS, PC.ink);
+    const c = counts(curDate, it.id);
+    txt((c.ok + c.late) + " / " + CFG.seats, cx(i) + CW / 2, top + HH / 2 + 9, '400 10px ' + FM, PC.dim);
+  });
+  SEATS().forEach((n, r) => {
+    const y = top + HH + r * RH;
+    if(r % 2) box(PAD, y, tableW, RH, PC.rowh);
+    txt(pad2(n), PAD + C0 / 2, y + RH / 2, '600 13px ' + FM, PC.ink);
+    txt(nameOf(n) || "", PAD + C0 + C1 / 2, y + RH / 2, '400 12px ' + FS, PC.ink);
+    its.forEach((it, i) => {
+      const s = statusOf(curDate, it.id, n);
+      const col = s === 1 ? PC.ok : s === 2 ? PC.late : PC.miss;
+      if(s === 0) box(cx(i) + 1, y + 1, CW - 2, RH - 2, PC.missbg);
+      txt(MARK[s], cx(i) + CW / 2, y + RH / 2, (s === 0 ? '600 ' : '400 ') + '14px ' + FS, col);
+    });
+  });
+  for(let r = 0; r <= CFG.seats; r++) line(PAD, top + HH + r * RH, PAD + tableW, top + HH + r * RH, PC.hair);
+  line(PAD, top + HH, PAD + tableW, top + HH, PC.line);
+  [0, C0, C0 + C1].forEach(x => line(PAD + x, top, PAD + x, top + tableH, PC.line));
+  its.forEach((it, i) => line(cx(i), top, cx(i), top + tableH, PC.hair));
+  g.strokeStyle = PC.line; g.lineWidth = 1.4; g.strokeRect(PAD, top, tableW, tableH);
+
+  let fy = top + tableH + 16;
+  txt("未交名單", PAD, fy, '700 11.5px ' + FS, PC.ink, "left");
+  missTxt.forEach((s, i) => {
+    txt(s, PAD + 62, fy + i * 16, '400 11px ' + FS, s.indexOf("全到齊") >= 0 ? PC.dim : PC.miss, "left");
+  });
+  return cv;
+}
+async function canvasImage(cv){
+  try{
+    if(typeof CompressionStream === "function"){
+      const px = cv.getContext("2d").getImageData(0, 0, cv.width, cv.height).data;
+      const rgb = new Uint8Array(cv.width * cv.height * 3);
+      for(let i = 0, j = 0; i < px.length; i += 4){ rgb[j++] = px[i]; rgb[j++] = px[i+1]; rgb[j++] = px[i+2]; }
+      const st = new Blob([rgb]).stream().pipeThrough(new CompressionStream("deflate"));
+      const buf = new Uint8Array(await new Response(st).arrayBuffer());
+      return { data:buf, filter:"/FlateDecode" };
+    }
+  }catch(e){}
+  const b64 = cv.toDataURL("image/jpeg", 0.95).split(",")[1];
+  const bin = atob(b64), u = new Uint8Array(bin.length);
+  for(let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return { data:u, filter:"/DCTDecode" };
+}
+async function buildPdf(){
+  if(document.fonts && document.fonts.ready){ try{ await document.fonts.ready; }catch(e){} }
+  const cv = renderSheetCanvas(3);
+  const img = await canvasImage(cv);
+  const PW = 595, PH = 842, M = 20;
+  const s = Math.min((PW - 2*M) / cv.width, (PH - 2*M) / cv.height);
+  const w = cv.width * s, h = cv.height * s, x = (PW - w) / 2, y = (PH - h) / 2;
+  const content = "q " + w.toFixed(2) + " 0 0 " + h.toFixed(2) + " " + x.toFixed(2) + " " + y.toFixed(2) + " cm /Im0 Do Q\n";
+  const parts = []; let len = 0;
+  const lat = str => { const a = new Uint8Array(str.length); for(let i = 0; i < str.length; i++) a[i] = str.charCodeAt(i) & 0xFF; return a; };
+  const put = u8 => { parts.push(u8); len += u8.length; };
+  const off = [0];
+  put(lat("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n"));
+  const obj = (n, head, stream) => {
+    off[n] = len;
+    put(lat(n + " 0 obj\n" + head + "\n"));
+    if(stream){ put(lat("stream\n")); put(stream); put(lat("\nendstream\n")); }
+    put(lat("endobj\n"));
+  };
+  const enc = new TextEncoder();
+  obj(1, "<< /Type /Catalog /Pages 2 0 R >>");
+  obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+  obj(3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + PW + " " + PH + "]"
+       + " /Resources << /ProcSet [/PDF /ImageC] /XObject << /Im0 5 0 R >> >> /Contents 4 0 R >>");
+  const cs = enc.encode(content);
+  obj(4, "<< /Length " + cs.length + " >>", cs);
+  obj(5, "<< /Type /XObject /Subtype /Image /Width " + cv.width + " /Height " + cv.height
+       + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter " + img.filter
+       + " /Length " + img.data.length + " >>", img.data);
+  const xref = len;
+  let x2 = "xref\n0 6\n0000000000 65535 f \n";
+  for(let i = 1; i <= 5; i++) x2 += String(off[i]).padStart(10, "0") + " 00000 n \n";
+  x2 += "trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n" + xref + "\n%%EOF\n";
+  put(lat(x2));
+  const out = new Uint8Array(len);
+  let p = 0; parts.forEach(c => { out.set(c, p); p += c.length; });
+  return out;
+}
+async function offer(filename, data, mime){
+  if(DL){
+    try{ await DL.save({ filename:filename, data:data }); toast("已儲存 " + filename); return true; }
+    catch(e){
+      const c = e && e.code;
+      if(c === "declined") return false;
+      if(c === "rejected_extension" || c === "extension_not_enabled"){
+        toast("這個檢視不允許下載 ." + filename.split(".").pop() + "，請改用其他格式"); return false;
+      }
+      if(c !== "unavailable" && c !== "not_granted" && c !== "capability_disabled" && c !== "capability_removed"){
+        toast("下載失敗：" + (e.message || c)); return false;
+      }
+    }
+  }
+  try{
+    const blob = new Blob([data], { type:mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename; a.style.display = "none";
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 2000);
+    toast("已下載 " + filename);
+    return true;
+  }catch(e){ toast("下載失敗：" + e.message); return false; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   作業項目編輯
+   ═══════════════════════════════════════════════════════════════ */
+let editingItems = false;
+function newId(){ return "x" + Math.random().toString(36).slice(2, 7); }
+/** 同名沿用舊 id（換順序不掉資料），同位置沿用舊 id（改名不掉資料），其餘給新 id */
+function reconcileItems(lines){
+  const old = items().slice(), used = {};
+  return lines.map((name, i) => {
+    let hit = old.find((o, j) => o.name === name && !used[j]);
+    if(hit) used[old.indexOf(hit)] = 1;
+    else if(old[i] && !used[i]){ hit = old[i]; used[i] = 1; }
+    return { id:hit ? hit.id : newId(), name:name };
+  });
+}
+function renderItemEditor(){
+  const box = document.getElementById("itemTabs");
+  box.textContent = "";
+  const ta = el("textarea");
+  ta.id = "itemBox";
+  ta.value = items().map(i => i.name).join("\n");
+  ta.placeholder = "一行一個作業項目";
+  box.appendChild(ta);
+  const p = el("p", "hint", "一行一個，最多 6 個（對應條碼 91–96）。改名不會影響舊紀錄；刪掉某一項，該項的歷史紀錄會留在雲端但不再顯示。");
+  p.style.flexBasis = "100%";
+  box.appendChild(p);
+  const row = el("div", "btns");
+  row.style.flexBasis = "100%";
+  const save = el("button", "btn pri", "儲存項目"); save.type = "button";
+  const cancel = el("button", "btn", "取消"); cancel.type = "button";
+  save.addEventListener("click", () => {
+    const lines = ta.value.split("\n").map(s => s.trim()).filter(Boolean).slice(0, 6);
+    if(!lines.length){ toast("至少要有一個作業項目"); return; }
+    const next = reconcileItems(lines);
+    editingItems = false;
+    mutate({ k:"i", items:next });
+    if(!next.some(x => x.id === curItem)) curItem = next[0].id;
+    renderAll(); toast("已更新作業項目"); refocus();
+  });
+  cancel.addEventListener("click", () => { editingItems = false; renderAll(); refocus(); });
+  row.appendChild(save); row.appendChild(cancel);
+  box.appendChild(row);
+  ta.focus();
+}
+const _renderTabs = renderTabs;
+renderTabs = function(){
+  document.getElementById("btnEditItems").textContent = editingItems ? "關閉編輯" : "編輯作業項目";
+  if(editingItems){ const b = document.getElementById("itemTabs"); b.style.display = "block"; renderItemEditor(); return; }
+  document.getElementById("itemTabs").style.display = "";
+  _renderTabs();
+};
+
+/* ═══════════════════════════════════════════════════════════════
+   事件
+   ═══════════════════════════════════════════════════════════════ */
+function goDate(d){ curDate = d; renderAll(); refocus(); }
+function flushScan(){
+  const inp = scanIn(), v = inp.value;
+  clearTimeout(SCAN_TIMER); SCAN_TIMER = null;
+  inp.value = "";
+  if(v.trim()) submitScan(v);
+}
+function wire(){
+  const inp = scanIn();
+  inp.addEventListener("keydown", e => {
+    if(e.key === "Enter" || e.key === "Tab"){ e.preventDefault(); flushScan(); }
+    else if(e.key === "Escape"){ inp.value = ""; clearTimeout(SCAN_TIMER); }
+  });
+  inp.addEventListener("input", () => {
+    clearTimeout(SCAN_TIMER);
+    if(!inp.value) return;
+    /* 沒設 Enter 後綴的掃描槍也接得住；單一個字先多等一下，免得手動輸入的 12 被切成 1 */
+    SCAN_TIMER = setTimeout(flushScan, inp.value.length >= 2 ? 130 : 420);
+  });
+  document.getElementById("noFocus").addEventListener("click", () => { inp.focus(); checkFocus(); });
+  document.addEventListener("click", e => {
+    if(!KEYBOARD_MODE) return;
+    const t = e.target;
+    if(!t || !t.closest || t.closest("input,textarea,select,a,button")) return;
+    inp.focus();
+  });
+  /* 焦點跑掉時，數字鍵仍然導回掃描框 —— 掃描槍最常見的失敗就是掃到空白處 */
+  document.addEventListener("keydown", e => {
+    if(e.target === inp || e.metaKey || e.ctrlKey || e.altKey) return;
+    const tag = e.target.tagName;
+    if(tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+    if(/^[0-9]$/.test(e.key)){
+      e.preventDefault();
+      inp.focus(); inp.value += e.key;
+      inp.dispatchEvent(new Event("input"));
+    }else if(e.key === "Enter" && inp.value){
+      e.preventDefault(); flushScan();
+    }
+  });
+  setInterval(checkFocus, 700);
+
+  document.getElementById("dPrev").addEventListener("click", () => goDate(shiftDate(curDate, -1)));
+  document.getElementById("dNext").addEventListener("click", () => goDate(shiftDate(curDate, 1)));
+  document.getElementById("dToday").addEventListener("click", () => goDate(todayKey()));
+  document.getElementById("dPick").addEventListener("change", ev => { if(ev.target.value) goDate(ev.target.value); });
+
+  document.getElementById("mOk").addEventListener("click", () => { setMode(1); refocus(); });
+  document.getElementById("mLate").addEventListener("click", () => { setMode(2); refocus(); });
+  document.getElementById("btnUndo").addEventListener("click", () => { doUndo(); refocus(); });
+  document.getElementById("btnEditItems").addEventListener("click", () => { editingItems = !editingItems; renderAll(); });
+
+  document.getElementById("btnAllOk").addEventListener("click", () => {
+    const prev = cellRaw(state.rec, curDate, curItem);
+    const all = SEATS().map(n => pad2(n) + (statusOf(curDate, curItem, n) === 2 ? "*" : "")).join(",");
+    mutate({ k:"r", d:curDate, it:curItem, val:all });
+    UNDO.push({ raw:true, d:curDate, it:curItem, val:prev });
+    toast(itemById(curItem).name + "：全班標為已交");
+    refocus();
+  });
+  const cb = document.getElementById("btnClearItem");
+  cb.addEventListener("click", () => {
+    if(cb.dataset.armed !== "1"){
+      cb.dataset.armed = "1"; cb.textContent = "再按一次確認清除";
+      clearTimeout(cb._t);
+      cb._t = setTimeout(() => { cb.dataset.armed = "0"; cb.textContent = "清除本項"; }, 4000);
+      return;
+    }
+    clearTimeout(cb._t); cb.dataset.armed = "0"; cb.textContent = "清除本項";
+    const prev = cellRaw(state.rec, curDate, curItem);
+    mutate({ k:"r", d:curDate, it:curItem, val:"" });
+    UNDO.push({ raw:true, d:curDate, it:curItem, val:prev });
+    toast("已清除 " + dateShort(curDate) + " 的「" + itemById(curItem).name + "」");
+    refocus();
+  });
+
+  document.getElementById("btnCopyMiss").addEventListener("click", async () => {
+    const m = missSeats(curDate, curItem);
+    const head = CFG.klass + "　" + curDate.replace(/-/g, "/") + "（" + wdOf(curDate) + "）　" + itemById(curItem).name;
+    const body = m.length ? "未交 " + m.length + " 位：" + m.map(n => seatLabel(n)).join("、")
+                          : "全班 " + CFG.seats + " 位都交了";
+    const txt = head + "\n" + body;
+    try{
+      if(navigator.share){ await navigator.share({ title:head, text:txt }); return; }
+      await navigator.clipboard.writeText(txt); toast("未交名單已複製");
+    }catch(e){
+      if(e && e.name === "AbortError") return;
+      try{ await navigator.clipboard.writeText(txt); toast("未交名單已複製"); }
+      catch(e2){ toast("複製失敗，請手動抄錄"); }
+    }
+  });
+
+  document.getElementById("btnSaveNames").addEventListener("click", () => {
+    const lines = document.getElementById("nameBox").value.split("\n").map(s => s.trim()).slice(0, CFG.seats);
+    while(lines.length && !lines[lines.length - 1]) lines.pop();
+    mutate({ k:"n", names:lines });
+    toast(lines.length ? "已儲存 " + lines.filter(Boolean).length + " 位學生姓名" : "名單已清空");
+    refocus();
+  });
+  document.getElementById("btnClearNames").addEventListener("click", () => {
+    document.getElementById("nameBox").value = "";
+    mutate({ k:"n", names:[] });
+    toast("名單已清空");
+  });
+
+  document.getElementById("btnXlsx").addEventListener("click", async ev => {
+    const b = ev.currentTarget; b.disabled = true;
+    try{
+      await offer(fileBase() + "_" + fileStamp() + ".xlsx", buildXlsx(),
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }finally{ b.disabled = false; refocus(); }
+  });
+  document.getElementById("btnCsv").addEventListener("click", async ev => {
+    const b = ev.currentTarget; b.disabled = true;
+    try{ await offer(fileBase() + "_" + fileStamp() + ".csv", buildCsv(), "text/csv;charset=utf-8"); }
+    finally{ b.disabled = false; refocus(); }
+  });
+  document.getElementById("btnPdf").addEventListener("click", async ev => {
+    const b = ev.currentTarget, t = b.textContent;
+    b.disabled = true; b.textContent = "產生中…";
+    try{ await offer(fileBase() + "_" + fileStamp() + ".pdf", await buildPdf(), "application/pdf"); }
+    catch(e){ toast("PDF 產生失敗：" + e.message); }
+    finally{ b.disabled = false; b.textContent = t; refocus(); }
+  });
+  document.getElementById("btnPrint").addEventListener("click", () => {
+    try{ window.print(); }catch(e){ toast("此檢視無法直接列印，請改用下載 PDF"); }
+  });
+}
+/** 用手機相機掃 QR（網址型）進來的情形：?s=07 直接登記一次 */
+function handleUrlSeat(){
+  const m = location.search.match(/[?&]s=(\d{1,3})/);
+  if(!m) return;
+  history.replaceState(null, "", location.pathname);
+  const n = parseInt(m[1], 10);
+  if(!(n >= 1 && n <= CFG.seats)) return;
+  submitScan(String(n));
+}
+
+loadLocal();
+renderAll();
+setMode(1);
+wire();
+initRuntime();
+handleUrlSeat();
+refocus();
+</script>
+<!--
+  ═══════════════════════════════════════════════════════════════
+  Firestore 規則（加在現有規則裡，其他 match 區塊原封不動保留）
+
+      match /hwCheck/{docId} {
+        allow read:  if docId == '115-1';
+        allow write: if docId == '115-1'
+          && request.resource.data.keys().hasOnly(['items','names','rec','updated','v'])
+          && request.resource.data.rec is map
+          && request.resource.data.rec.size() <= 250
+          && request.resource.data.items is list
+          && request.resource.data.items.size() <= 12
+          && request.resource.data.names is list
+          && request.resource.data.names.size() <= 60
+          && request.resource.data.updated is string
+          && request.resource.data.updated.size() <= 40;
+      }
+
+  hwCheck / 115-1 要和程式裡的 FIRE_COL / FIRE_ID 一致。
+  換學期就換一個 FIRE_ID（例如 115-2），規則跟著改，舊資料留在原文件。
+
+  條碼對照：
+    01–25  學生座號
+    91–96  切換到第 1–6 個作業項目
+    97     已交／補交 切換
+    98     復原上一筆
+  ═══════════════════════════════════════════════════════════════
+-->
+</body>
+</html>

@@ -45,7 +45,24 @@ self.addEventListener("fetch", (e) => {
           return res;
         })
         .catch(() =>
-          caches.match(req).then((hit) => hit || caches.match("./index.html"))
+          caches.match(req).then((hit) => {
+            if (hit) return hit;
+            // 只有報告頁離線時才退回首頁。導師用的表單頁退回一份股市報告，
+            // 比誠實說「離線」更容易讓人以為是網址打錯了。
+            const p = new URL(req.url).pathname;
+            const isReport =
+              /\/(index\.html)?$/.test(p) ||
+              /\/(pre|post)market-/.test(p) ||
+              /latest-postmarket/.test(p);
+            if (isReport) return caches.match("./index.html");
+            return new Response(
+              '<!doctype html><meta charset="utf-8"><title>目前離線</title>' +
+                '<body style="font:16px/1.75 system-ui,sans-serif;padding:2rem;max-width:32rem;margin:auto">' +
+                '<h1 style="font-size:1.2rem">目前離線</h1>' +
+                "<p>這一頁還沒有離線副本，請連上網路後重新整理。</p>",
+              { status: 503, headers: { "Content-Type": "text/html; charset=utf-8" } }
+            );
+          })
         )
     );
     return;
