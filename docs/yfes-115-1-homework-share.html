@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>六年三班 作業繳交清點入口</title>
+<meta name="description" content="掃描 QR code 進入作業繳交清點系統">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#faf8f4">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@600;700&display=swap">
+<style>
+*{box-sizing:border-box}
+:root{
+  --paper:#faf8f4; --card:#ffffff; --ink:#1e1c19; --dim:#6d675e; --faint:#989185;
+  --line:#e4dfd5; --sunk:#f4f1ea;
+  --ok:#1c7549; --ok-bg:#eaf6ef; --late:#a1670f; --late-bg:#fbf3e2; --miss:#9c3412; --miss-bg:#fbeee7;
+  --focus:#1d5ba4;
+  --sh:0 1px 2px rgba(40,32,18,.05), 0 10px 34px -14px rgba(40,32,18,.28);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#1a1815; --card:#232019; --ink:#ece6dc; --dim:#a09789; --faint:#7b7366;
+    --line:#35312a; --sunk:#1f1c17;
+    --ok:#5ec68e; --ok-bg:#172b20; --late:#e3a943; --late-bg:#332a17; --miss:#f0a184; --miss-bg:#33211a;
+    --focus:#7db0ef;
+    --sh:0 1px 2px rgba(0,0,0,.3), 0 10px 34px -14px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#1a1815; --card:#232019; --ink:#ece6dc; --dim:#a09789; --faint:#7b7366;
+  --line:#35312a; --sunk:#1f1c17;
+  --ok:#5ec68e; --ok-bg:#172b20; --late:#e3a943; --late-bg:#332a17; --miss:#f0a184; --miss-bg:#33211a;
+  --focus:#7db0ef;
+  --sh:0 1px 2px rgba(0,0,0,.3), 0 10px 34px -14px rgba(0,0,0,.7);
+}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);
+  font:16px/1.65 "Noto Sans TC",-apple-system,BlinkMacSystemFont,"PingFang TC","Microsoft JhengHei",sans-serif}
+.wrap{max-width:560px;margin:0 auto;padding:40px 20px 64px;display:flex;flex-direction:column;gap:26px}
+header{text-align:center;display:flex;flex-direction:column;gap:6px}
+.eyebrow{margin:0;font-size:12.5px;letter-spacing:.14em;color:var(--dim);font-weight:500}
+h1{margin:0;font-family:"Noto Serif TC",serif;font-weight:700;font-size:clamp(24px,5.6vw,31px);
+  line-height:1.32;text-wrap:balance}
+.lede{margin:0;color:var(--dim);font-size:15px}
+/* QR 卡片：不論深淺色主題都保持白底黑碼，確保掃得到 */
+.qrcard{background:#fff;border:1px solid var(--line);border-radius:20px;box-shadow:var(--sh);
+  padding:26px 26px 20px;display:flex;flex-direction:column;align-items:center;gap:14px}
+.qrcard svg{width:min(320px,72vw);height:auto;display:block;shape-rendering:crispEdges}
+.url{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;font-size:11.5px;color:#6d675e;
+  word-break:break-all;text-align:center;line-height:1.5;max-width:34ch;margin:0}
+.actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.btn{appearance:none;font:inherit;font-size:15px;font-weight:600;border-radius:11px;padding:12px 20px;
+  cursor:pointer;border:1px solid var(--ink);background:var(--ink);color:var(--paper);
+  text-decoration:none;display:inline-flex;align-items:center;gap:7px;transition:opacity .12s,transform .08s}
+.btn:hover{opacity:.87} .btn:active{transform:translateY(1px)}
+.btn.ghost{background:transparent;color:var(--ink);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--dim);opacity:1}
+.btn:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:11px;counter-reset:s}
+.steps li{counter-increment:s;display:flex;gap:13px;align-items:flex-start;
+  background:var(--card);border:1px solid var(--line);border-radius:13px;padding:13px 15px}
+.steps li::before{content:counter(s);flex:0 0 24px;height:24px;border-radius:50%;
+  background:var(--sunk);color:var(--dim);font-family:"IBM Plex Mono",monospace;font-size:12.5px;
+  font-weight:500;display:grid;place-items:center;margin-top:1px}
+.steps b{display:block;font-size:15px;font-weight:600}
+.steps span{display:block;font-size:13.5px;color:var(--dim);margin-top:1px}
+.when{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;
+  display:flex;flex-direction:column;gap:10px}
+.when h2{margin:0;font-family:"Noto Serif TC",serif;font-size:15px;font-weight:600}
+.rows{display:flex;flex-direction:column;gap:7px}
+.row{display:flex;align-items:center;gap:10px;font-size:14px}
+.pill{flex:0 0 auto;font-size:12.5px;font-weight:600;padding:3px 10px;border-radius:999px;
+  font-family:"IBM Plex Mono",monospace}
+.p1{color:var(--ok);background:var(--ok-bg)} .p2{color:var(--late);background:var(--late-bg)}
+.p3{color:var(--miss);background:var(--miss-bg)}
+.note{margin:0;font-size:13px;color:var(--dim);border-top:1px solid var(--line);padding-top:10px}
+footer{text-align:center;color:var(--faint);font-size:12.5px;line-height:1.8}
+footer a{color:var(--dim)}
+#toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,14px);
+  background:var(--ink);color:var(--paper);padding:11px 18px;border-radius:11px;font-size:14px;
+  box-shadow:0 10px 30px -8px rgba(0,0,0,.45);opacity:0;pointer-events:none;transition:opacity .18s,transform .18s}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media print{
+  body{background:#fff}
+  .wrap{max-width:none;padding:12mm 10mm}
+  .actions,#toast{display:none!important}
+  .qrcard{box-shadow:none;break-inside:avoid}
+  .qrcard svg{width:96mm}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="eyebrow">永福國小 · 115 學年度第一學期</p>
+    <h1>六年三班　作業繳交清點</h1>
+    <p class="lede">用手機或平板掃描下方 QR code，直接開始清點</p>
+  </header>
+
+  <div class="qrcard">
+    <svg viewBox="-4 -4 49 49" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="清點系統網址 QR code"><rect x="-4" y="-4" width="49" height="49" fill="#ffffff"/><path fill="#1e1c19" d="M0 0h7v1h-7zM11 0h1v1h-1zM14 0h2v1h-2zM18 0h2v1h-2zM21 0h1v1h-1zM23 0h1v1h-1zM25 0h1v1h-1zM28 0h1v1h-1zM30 0h1v1h-1zM34 0h7v1h-7zM0 1h1v1h-1zM6 1h1v1h-1zM8 1h3v1h-3zM12 1h2v1h-2zM18 1h3v1h-3zM22 1h1v1h-1zM25 1h2v1h-2zM28 1h2v1h-2zM31 1h1v1h-1zM34 1h1v1h-1zM40 1h1v1h-1zM0 2h1v1h-1zM2 2h3v1h-3zM6 2h1v1h-1zM9 2h1v1h-1zM11 2h1v1h-1zM13 2h5v1h-5zM19 2h2v1h-2zM25 2h1v1h-1zM27 2h2v1h-2zM30 2h2v1h-2zM34 2h1v1h-1zM36 2h3v1h-3zM40 2h1v1h-1zM0 3h1v1h-1zM2 3h3v1h-3zM6 3h1v1h-1zM8 3h4v1h-4zM21 3h2v1h-2zM26 3h1v1h-1zM29 3h1v1h-1zM31 3h2v1h-2zM34 3h1v1h-1zM36 3h3v1h-3zM40 3h1v1h-1zM0 4h1v1h-1zM2 4h3v1h-3zM6 4h1v1h-1zM8 4h2v1h-2zM11 4h3v1h-3zM15 4h1v1h-1zM18 4h3v1h-3zM22 4h1v1h-1zM24 4h1v1h-1zM26 4h1v1h-1zM28 4h4v1h-4zM34 4h1v1h-1zM36 4h3v1h-3zM40 4h1v1h-1zM0 5h1v1h-1zM6 5h1v1h-1zM9 5h1v1h-1zM11 5h2v1h-2zM14 5h1v1h-1zM18 5h1v1h-1zM21 5h1v1h-1zM23 5h1v1h-1zM30 5h1v1h-1zM32 5h1v1h-1zM34 5h1v1h-1zM40 5h1v1h-1zM0 6h7v1h-7zM8 6h1v1h-1zM10 6h1v1h-1zM12 6h1v1h-1zM14 6h1v1h-1zM16 6h1v1h-1zM18 6h1v1h-1zM20 6h1v1h-1zM22 6h1v1h-1zM24 6h1v1h-1zM26 6h1v1h-1zM28 6h1v1h-1zM30 6h1v1h-1zM32 6h1v1h-1zM34 6h7v1h-7zM8 7h1v1h-1zM10 7h1v1h-1zM16 7h1v1h-1zM18 7h2v1h-2zM21 7h3v1h-3zM25 7h4v1h-4zM31 7h1v1h-1zM1 8h1v1h-1zM3 8h4v1h-4zM8 8h2v1h-2zM13 8h5v1h-5zM23 8h2v1h-2zM29 8h1v1h-1zM31 8h4v1h-4zM36 8h2v1h-2zM39 8h1v1h-1zM0 9h1v1h-1zM4 9h1v1h-1zM8 9h2v1h-2zM12 9h1v1h-1zM15 9h1v1h-1zM17 9h2v1h-2zM21 9h2v1h-2zM24 9h1v1h-1zM27 9h2v1h-2zM30 9h2v1h-2zM35 9h2v1h-2zM0 10h1v1h-1zM4 10h1v1h-1zM6 10h3v1h-3zM11 10h1v1h-1zM13 10h2v1h-2zM17 10h2v1h-2zM20 10h1v1h-1zM24 10h1v1h-1zM27 10h1v1h-1zM30 10h1v1h-1zM38 10h1v1h-1zM0 11h6v1h-6zM8 11h2v1h-2zM16 11h2v1h-2zM19 11h1v1h-1zM21 11h3v1h-3zM27 11h1v1h-1zM29 11h5v1h-5zM35 11h1v1h-1zM37 11h1v1h-1zM40 11h1v1h-1zM0 12h1v1h-1zM3 12h1v1h-1zM5 12h3v1h-3zM10 12h4v1h-4zM15 12h1v1h-1zM18 12h2v1h-2zM21 12h3v1h-3zM28 12h1v1h-1zM30 12h1v1h-1zM32 12h1v1h-1zM34 12h2v1h-2zM39 12h1v1h-1zM1 13h2v1h-2zM7 13h1v1h-1zM9 13h2v1h-2zM12 13h2v1h-2zM15 13h1v1h-1zM17 13h1v1h-1zM19 13h1v1h-1zM21 13h1v1h-1zM24 13h2v1h-2zM30 13h1v1h-1zM32 13h1v1h-1zM34 13h5v1h-5zM40 13h1v1h-1zM1 14h1v1h-1zM3 14h1v1h-1zM6 14h1v1h-1zM8 14h3v1h-3zM13 14h1v1h-1zM15 14h1v1h-1zM17 14h3v1h-3zM22 14h1v1h-1zM25 14h1v1h-1zM27 14h3v1h-3zM31 14h5v1h-5zM37 14h1v1h-1zM40 14h1v1h-1zM0 15h3v1h-3zM5 15h1v1h-1zM10 15h1v1h-1zM16 15h1v1h-1zM21 15h1v1h-1zM24 15h1v1h-1zM30 15h4v1h-4zM35 15h2v1h-2zM38 15h3v1h-3zM0 16h1v1h-1zM5 16h3v1h-3zM9 16h2v1h-2zM12 16h1v1h-1zM14 16h3v1h-3zM18 16h1v1h-1zM20 16h2v1h-2zM23 16h4v1h-4zM28 16h1v1h-1zM31 16h1v1h-1zM33 16h1v1h-1zM37 16h1v1h-1zM0 17h1v1h-1zM3 17h2v1h-2zM8 17h2v1h-2zM11 17h1v1h-1zM15 17h2v1h-2zM19 17h1v1h-1zM24 17h5v1h-5zM30 17h4v1h-4zM36 17h4v1h-4zM0 18h1v1h-1zM3 18h1v1h-1zM6 18h2v1h-2zM12 18h4v1h-4zM17 18h1v1h-1zM19 18h1v1h-1zM21 18h1v1h-1zM23 18h1v1h-1zM27 18h1v1h-1zM29 18h3v1h-3zM33 18h1v1h-1zM35 18h2v1h-2zM38 18h3v1h-3zM1 19h1v1h-1zM5 19h1v1h-1zM7 19h3v1h-3zM11 19h1v1h-1zM13 19h4v1h-4zM21 19h2v1h-2zM24 19h1v1h-1zM26 19h1v1h-1zM28 19h1v1h-1zM30 19h1v1h-1zM33 19h1v1h-1zM36 19h1v1h-1zM38 19h1v1h-1zM1 20h2v1h-2zM5 20h4v1h-4zM10 20h3v1h-3zM14 20h1v1h-1zM16 20h3v1h-3zM20 20h1v1h-1zM22 20h1v1h-1zM25 20h2v1h-2zM28 20h2v1h-2zM32 20h1v1h-1zM34 20h2v1h-2zM37 20h4v1h-4zM0 21h1v1h-1zM2 21h4v1h-4zM7 21h4v1h-4zM14 21h4v1h-4zM19 21h2v1h-2zM22 21h2v1h-2zM26 21h4v1h-4zM31 21h1v1h-1zM33 21h1v1h-1zM35 21h3v1h-3zM0 22h1v1h-1zM3 22h1v1h-1zM6 22h2v1h-2zM10 22h4v1h-4zM15 22h1v1h-1zM18 22h4v1h-4zM23 22h2v1h-2zM27 22h4v1h-4zM32 22h1v1h-1zM36 22h2v1h-2zM0 23h6v1h-6zM8 23h1v1h-1zM14 23h2v1h-2zM19 23h3v1h-3zM23 23h2v1h-2zM26 23h2v1h-2zM29 23h1v1h-1zM33 23h2v1h-2zM36 23h2v1h-2zM39 23h2v1h-2zM0 24h3v1h-3zM4 24h1v1h-1zM6 24h1v1h-1zM8 24h4v1h-4zM15 24h1v1h-1zM17 24h2v1h-2zM20 24h1v1h-1zM23 24h1v1h-1zM26 24h1v1h-1zM28 24h1v1h-1zM32 24h1v1h-1zM34 24h2v1h-2zM37 24h1v1h-1zM40 24h1v1h-1zM0 25h1v1h-1zM2 25h1v1h-1zM4 25h2v1h-2zM7 25h1v1h-1zM9 25h1v1h-1zM12 25h1v1h-1zM15 25h4v1h-4zM22 25h4v1h-4zM27 25h4v1h-4zM32 25h5v1h-5zM38 25h1v1h-1zM40 25h1v1h-1zM0 26h1v1h-1zM6 26h2v1h-2zM9 26h1v1h-1zM12 26h1v1h-1zM14 26h4v1h-4zM26 26h2v1h-2zM29 26h1v1h-1zM31 26h2v1h-2zM37 26h1v1h-1zM40 26h1v1h-1zM0 27h2v1h-2zM4 27h2v1h-2zM10 27h4v1h-4zM16 27h1v1h-1zM19 27h1v1h-1zM21 27h1v1h-1zM24 27h1v1h-1zM27 27h1v1h-1zM30 27h2v1h-2zM33 27h1v1h-1zM36 27h5v1h-5zM0 28h7v1h-7zM9 28h1v1h-1zM14 28h1v1h-1zM19 28h3v1h-3zM24 28h3v1h-3zM31 28h2v1h-2zM35 28h1v1h-1zM37 28h1v1h-1zM40 28h1v1h-1zM0 29h3v1h-3zM4 29h1v1h-1zM7 29h2v1h-2zM12 29h1v1h-1zM15 29h1v1h-1zM21 29h3v1h-3zM27 29h1v1h-1zM29 29h5v1h-5zM36 29h2v1h-2zM0 30h2v1h-2zM6 30h2v1h-2zM9 30h2v1h-2zM12 30h1v1h-1zM14 30h2v1h-2zM19 30h2v1h-2zM24 30h2v1h-2zM27 30h1v1h-1zM29 30h1v1h-1zM31 30h3v1h-3zM35 30h1v1h-1zM37 30h2v1h-2zM40 30h1v1h-1zM0 31h2v1h-2zM4 31h1v1h-1zM8 31h1v1h-1zM10 31h3v1h-3zM14 31h6v1h-6zM23 31h1v1h-1zM25 31h1v1h-1zM28 31h1v1h-1zM32 31h1v1h-1zM34 31h2v1h-2zM37 31h2v1h-2zM40 31h1v1h-1zM0 32h3v1h-3zM5 32h3v1h-3zM9 32h1v1h-1zM11 32h4v1h-4zM17 32h2v1h-2zM22 32h2v1h-2zM28 32h2v1h-2zM31 32h10v1h-10zM8 33h6v1h-6zM18 33h1v1h-1zM20 33h2v1h-2zM23 33h2v1h-2zM26 33h3v1h-3zM32 33h1v1h-1zM36 33h1v1h-1zM38 33h2v1h-2zM0 34h7v1h-7zM9 34h1v1h-1zM11 34h1v1h-1zM16 34h4v1h-4zM22 34h2v1h-2zM26 34h4v1h-4zM31 34h2v1h-2zM34 34h1v1h-1zM36 34h4v1h-4zM0 35h1v1h-1zM6 35h1v1h-1zM8 35h2v1h-2zM11 35h3v1h-3zM15 35h1v1h-1zM17 35h2v1h-2zM20 35h4v1h-4zM26 35h5v1h-5zM32 35h1v1h-1zM36 35h2v1h-2zM39 35h2v1h-2zM0 36h1v1h-1zM2 36h3v1h-3zM6 36h1v1h-1zM8 36h3v1h-3zM19 36h2v1h-2zM22 36h1v1h-1zM25 36h4v1h-4zM31 36h6v1h-6zM39 36h2v1h-2zM0 37h1v1h-1zM2 37h3v1h-3zM6 37h1v1h-1zM8 37h1v1h-1zM10 37h1v1h-1zM13 37h1v1h-1zM15 37h2v1h-2zM18 37h1v1h-1zM20 37h4v1h-4zM25 37h1v1h-1zM27 37h6v1h-6zM35 37h1v1h-1zM0 38h1v1h-1zM2 38h3v1h-3zM6 38h1v1h-1zM16 38h1v1h-1zM20 38h1v1h-1zM25 38h1v1h-1zM27 38h1v1h-1zM33 38h1v1h-1zM35 38h2v1h-2zM40 38h1v1h-1zM0 39h1v1h-1zM6 39h1v1h-1zM8 39h4v1h-4zM15 39h1v1h-1zM17 39h2v1h-2zM22 39h1v1h-1zM26 39h1v1h-1zM28 39h1v1h-1zM33 39h2v1h-2zM36 39h3v1h-3zM40 39h1v1h-1zM0 40h7v1h-7zM11 40h1v1h-1zM13 40h2v1h-2zM17 40h1v1h-1zM19 40h1v1h-1zM21 40h2v1h-2zM25 40h2v1h-2zM31 40h3v1h-3zM36 40h1v1h-1z"/></svg>
+    <p class="url" id="url">https://simon05091004.github.io/tw-premarket/yfes-115-1-homework.html</p>
+  </div>
+
+  <div class="actions">
+    <a class="btn" href="https://simon05091004.github.io/tw-premarket/yfes-115-1-homework.html">開啟清點系統</a>
+    <button class="btn ghost" id="copy" type="button">複製連結</button>
+  </div>
+
+  <ol class="steps">
+    <li><div><b>確認日期</b><span>預設就是今天，不用改；要補登昨天的用左右箭頭切換</span></div></li>
+    <li><div><b>點要清點的作業</b><span>國語習作、數學習作…點一下切換，每一項各自記錄</span></div></li>
+    <li><div><b>收一本掃一格</b><span>掃描槍掃座號條碼；沒有掃描槍就直接點畫面上的座號</span></div></li>
+    <li><div><b>收完按「複製未交名單」</b><span>貼到群組回報老師，不用自己抄</span></div></li>
+  </ol>
+
+  <section class="when">
+    <h2>畫面上的顏色</h2>
+    <div class="rows">
+      <div class="row"><span class="pill p1">已交</span>綠色，掃到就變綠</div>
+      <div class="row"><span class="pill p2">補交</span>橘色，先掃控制條碼 97 切換再掃座號</div>
+      <div class="row"><span class="pill p3">未交</span>白色，最下面會列出還差哪幾號</div>
+    </div>
+    <p class="note">同一個人掃兩次不會重複計算，會出現黃色「已經登記過了」。<br>掃錯人按「復原上一筆」，或掃控制條碼 98。<br>座號格子點一下會在 未交 → 已交 → 補交 之間循環，可以手動更正。</p>
+  </section>
+
+  <footer>紀錄存在雲端，老師和小老師看到同一份<br><a href="yfes-115-1-homework-labels.html">列印座號條碼標籤</a></footer>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+<script>
+(function(){
+  var URL_ = document.getElementById("url").textContent.trim();
+  var t = document.getElementById("toast");
+  function toast(m){ t.textContent = m; t.classList.add("show"); clearTimeout(toast._t);
+    toast._t = setTimeout(function(){ t.classList.remove("show"); }, 2400); }
+  document.getElementById("copy").addEventListener("click", async function(){
+    try{
+      if(navigator.share){ await navigator.share({title:"作業繳交清點", url:URL_}); return; }
+      await navigator.clipboard.writeText(URL_);
+      toast("連結已複製");
+    }catch(e){
+      if(e && e.name === "AbortError") return;
+      try{ await navigator.clipboard.writeText(URL_); toast("連結已複製"); }
+      catch(e2){ toast("請長按上方網址手動複製"); }
+    }
+  });
+})();
+</script>
+</body>
+</html>

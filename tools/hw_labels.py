@@ -82,6 +82,45 @@ def qr_svg(data, size_mm):
             % (n + 2, n + 2, size_mm, size_mm, "".join(d)))
 
 
+def qr_scalable(data, error="q"):
+    """回傳沒有固定寬度的 QR SVG，寬度交給 CSS 決定；自帶白底，深色主題也掃得到。"""
+    try:
+        import segno
+    except ImportError:
+        sys.exit("需要 segno：pip install segno")
+    qr = segno.make(data, error=error)
+    m = [list(r) for r in qr.matrix]
+    n = len(m)
+    d = []
+    for y, row in enumerate(m):
+        x = 0
+        while x < n:
+            if row[x]:
+                run = 1
+                while x + run < n and row[x + run]:
+                    run += 1
+                d.append("M%d %dh%dv1h-%dz" % (x, y, run, run))
+                x += run
+            else:
+                x += 1
+    b = 4
+    return ('<svg viewBox="-%d -%d %d %d" xmlns="http://www.w3.org/2000/svg" role="img" '
+            'aria-label="清點系統網址 QR code">'
+            '<rect x="-%d" y="-%d" width="%d" height="%d" fill="#ffffff"/>'
+            '<path fill="#1e1c19" d="%s"/></svg>'
+            % (b, b, n + 2 * b, n + 2 * b, b, b, n + 2 * b, n + 2 * b, "".join(d)))
+
+
+def qr_png(data, path, mm=52, dpi=300, error="q"):
+    """獨立 QR 圖檔，貼通知單或 LINE 用。"""
+    import segno
+    qr = segno.make(data, error=error)
+    n = len(qr.matrix) + 8
+    scale = max(4, int(mm / 25.4 * dpi) // n)
+    qr.save(path, scale=scale, border=4, dark="#1e1c19", light="#ffffff")
+    return path
+
+
 # ── 頁面 ──────────────────────────────────────────────────────────────────
 CSS = """
 *{box-sizing:border-box}
@@ -120,6 +159,10 @@ svg{display:block} svg rect,svg path{fill:#000}
 .ctrl .gcell .n{font-size:12px;font-weight:600}
 .note{margin-top:6mm;font-size:10.5px;color:#6d675e;line-height:1.8;border-top:1px solid #ddd8cf;padding-top:3mm}
 .note b{color:#1e1c19}
+.notegrid{display:flex;gap:6mm;align-items:flex-start}
+.notegrid>div:first-child{flex:1}
+.entry{flex:0 0 auto;text-align:center}
+.entry span{display:block;font-size:9.5px;line-height:1.5;margin-top:1mm;color:#3a352e}
 .bar-toolbar{max-width:210mm;margin:14px auto 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap;
   font-size:13px;color:#6d675e;padding:0 10mm}
 .bar-toolbar button,.bar-toolbar a{appearance:none;font:inherit;font-size:13.5px;cursor:pointer;
@@ -177,11 +220,15 @@ def build(seats, klass, school, url_base, names, out):
         '<div class="ctrl"><h2>控制條碼</h2>'
         '<p>不用碰螢幕就能換作業項目。掃 91–96 切換項目，掃 97 在「已交／補交」之間切換，掃 98 復原上一筆。</p>'
         '<div class="grid">%s</div></div>'
-        '<div class="note"><b>使用方式</b>　把掃描槍設成「掃完自動送出 Enter」，'
+        '<div class="note"><div class="notegrid"><div>'
+        '<b>使用方式</b>　把掃描槍設成「掃完自動送出 Enter」，'
         '在系統頁面把游標留在掃描框，收一本掃一格，畫面會即時顯示已收幾份、還差哪幾號。<br>'
-        '<b>系統網址</b>　%s</div></section>'
+        '<b>沒有掃描槍</b>　直接點畫面上的座號格子也可以。<br>'
+        '<b>系統網址</b>　%s</div>'
+        '<div class="entry">%s<span>小老師掃這裡<br>直接進系統</span></div>'
+        '</div></div></section>'
         % (html.escape(school), html.escape(klass), len(pages) + 1, len(pages) + 1,
-           grid, ctrl, html.escape(url_base)))
+           grid, ctrl, html.escape(url_base), qr_svg(url_base, 24)))
 
     doc = ('<!doctype html>\n<html lang="zh-Hant">\n<head>\n<meta charset="utf-8">\n'
            '<meta name="viewport" content="width=device-width,initial-scale=1">\n'
@@ -202,11 +249,165 @@ def build(seats, klass, school, url_base, names, out):
     return out
 
 
+
+SHARE_CSS = """
+*{box-sizing:border-box}
+:root{
+  --paper:#faf8f4; --card:#ffffff; --ink:#1e1c19; --dim:#6d675e; --faint:#989185;
+  --line:#e4dfd5; --sunk:#f4f1ea;
+  --ok:#1c7549; --ok-bg:#eaf6ef; --late:#a1670f; --late-bg:#fbf3e2; --miss:#9c3412; --miss-bg:#fbeee7;
+  --focus:#1d5ba4;
+  --sh:0 1px 2px rgba(40,32,18,.05), 0 10px 34px -14px rgba(40,32,18,.28);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#1a1815; --card:#232019; --ink:#ece6dc; --dim:#a09789; --faint:#7b7366;
+    --line:#35312a; --sunk:#1f1c17;
+    --ok:#5ec68e; --ok-bg:#172b20; --late:#e3a943; --late-bg:#332a17; --miss:#f0a184; --miss-bg:#33211a;
+    --focus:#7db0ef;
+    --sh:0 1px 2px rgba(0,0,0,.3), 0 10px 34px -14px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#1a1815; --card:#232019; --ink:#ece6dc; --dim:#a09789; --faint:#7b7366;
+  --line:#35312a; --sunk:#1f1c17;
+  --ok:#5ec68e; --ok-bg:#172b20; --late:#e3a943; --late-bg:#332a17; --miss:#f0a184; --miss-bg:#33211a;
+  --focus:#7db0ef;
+  --sh:0 1px 2px rgba(0,0,0,.3), 0 10px 34px -14px rgba(0,0,0,.7);
+}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);
+  font:16px/1.65 "Noto Sans TC",-apple-system,BlinkMacSystemFont,"PingFang TC","Microsoft JhengHei",sans-serif}
+.wrap{max-width:560px;margin:0 auto;padding:40px 20px 64px;display:flex;flex-direction:column;gap:26px}
+header{text-align:center;display:flex;flex-direction:column;gap:6px}
+.eyebrow{margin:0;font-size:12.5px;letter-spacing:.14em;color:var(--dim);font-weight:500}
+h1{margin:0;font-family:"Noto Serif TC",serif;font-weight:700;font-size:clamp(24px,5.6vw,31px);
+  line-height:1.32;text-wrap:balance}
+.lede{margin:0;color:var(--dim);font-size:15px}
+/* QR 卡片：不論深淺色主題都保持白底黑碼，確保掃得到 */
+.qrcard{background:#fff;border:1px solid var(--line);border-radius:20px;box-shadow:var(--sh);
+  padding:26px 26px 20px;display:flex;flex-direction:column;align-items:center;gap:14px}
+.qrcard svg{width:min(320px,72vw);height:auto;display:block;shape-rendering:crispEdges}
+.url{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;font-size:11.5px;color:#6d675e;
+  word-break:break-all;text-align:center;line-height:1.5;max-width:34ch;margin:0}
+.actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.btn{appearance:none;font:inherit;font-size:15px;font-weight:600;border-radius:11px;padding:12px 20px;
+  cursor:pointer;border:1px solid var(--ink);background:var(--ink);color:var(--paper);
+  text-decoration:none;display:inline-flex;align-items:center;gap:7px;transition:opacity .12s,transform .08s}
+.btn:hover{opacity:.87} .btn:active{transform:translateY(1px)}
+.btn.ghost{background:transparent;color:var(--ink);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--dim);opacity:1}
+.btn:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:11px;counter-reset:s}
+.steps li{counter-increment:s;display:flex;gap:13px;align-items:flex-start;
+  background:var(--card);border:1px solid var(--line);border-radius:13px;padding:13px 15px}
+.steps li::before{content:counter(s);flex:0 0 24px;height:24px;border-radius:50%;
+  background:var(--sunk);color:var(--dim);font-family:"IBM Plex Mono",monospace;font-size:12.5px;
+  font-weight:500;display:grid;place-items:center;margin-top:1px}
+.steps b{display:block;font-size:15px;font-weight:600}
+.steps span{display:block;font-size:13.5px;color:var(--dim);margin-top:1px}
+.when{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;
+  display:flex;flex-direction:column;gap:10px}
+.when h2{margin:0;font-family:"Noto Serif TC",serif;font-size:15px;font-weight:600}
+.rows{display:flex;flex-direction:column;gap:7px}
+.row{display:flex;align-items:center;gap:10px;font-size:14px}
+.pill{flex:0 0 auto;font-size:12.5px;font-weight:600;padding:3px 10px;border-radius:999px;
+  font-family:"IBM Plex Mono",monospace}
+.p1{color:var(--ok);background:var(--ok-bg)} .p2{color:var(--late);background:var(--late-bg)}
+.p3{color:var(--miss);background:var(--miss-bg)}
+.note{margin:0;font-size:13px;color:var(--dim);border-top:1px solid var(--line);padding-top:10px}
+footer{text-align:center;color:var(--faint);font-size:12.5px;line-height:1.8}
+footer a{color:var(--dim)}
+#toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,14px);
+  background:var(--ink);color:var(--paper);padding:11px 18px;border-radius:11px;font-size:14px;
+  box-shadow:0 10px 30px -8px rgba(0,0,0,.45);opacity:0;pointer-events:none;transition:opacity .18s,transform .18s}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media print{
+  body{background:#fff}
+  .wrap{max-width:none;padding:12mm 10mm}
+  .actions,#toast{display:none!important}
+  .qrcard{box-shadow:none;break-inside:avoid}
+  .qrcard svg{width:96mm}
+}
+"""
+
+
+def build_share(klass, school, term, url_base, labels_href, out):
+    """小老師用的掃描入口頁：大 QR、連結、四個步驟。投影或截圖丟群組都行。"""
+    doc = ('<!doctype html>\n<html lang="zh-Hant">\n<head>\n<meta charset="utf-8">\n'
+           '<meta name="viewport" content="width=device-width,initial-scale=1">\n'
+           '<title>%s 作業繳交清點入口</title>\n'
+           '<meta name="description" content="掃描 QR code 進入作業繳交清點系統">\n'
+           '<meta name="robots" content="noindex,nofollow">\n'
+           '<meta name="theme-color" content="#faf8f4">\n'
+           '<link rel="preconnect" href="https://fonts.googleapis.com">\n'
+           '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n'
+           '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?'
+           'family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+TC:wght@400;500;700'
+           '&family=Noto+Serif+TC:wght@600;700&display=swap">\n'
+           '<style>%s</style>\n</head>\n<body>\n<div class="wrap">\n'
+           '  <header>\n'
+           '    <p class="eyebrow">%s · %s</p>\n'
+           '    <h1>%s　作業繳交清點</h1>\n'
+           '    <p class="lede">用手機或平板掃描下方 QR code，直接開始清點</p>\n'
+           '  </header>\n\n'
+           '  <div class="qrcard">\n    %s\n    <p class="url" id="url">%s</p>\n  </div>\n\n'
+           '  <div class="actions">\n'
+           '    <a class="btn" href="%s">開啟清點系統</a>\n'
+           '    <button class="btn ghost" id="copy" type="button">複製連結</button>\n'
+           '  </div>\n\n'
+           '  <ol class="steps">\n'
+           '    <li><div><b>確認日期</b><span>預設就是今天，不用改；要補登昨天的用左右箭頭切換</span></div></li>\n'
+           '    <li><div><b>點要清點的作業</b><span>國語習作、數學習作…點一下切換，每一項各自記錄</span></div></li>\n'
+           '    <li><div><b>收一本掃一格</b><span>掃描槍掃座號條碼；沒有掃描槍就直接點畫面上的座號</span></div></li>\n'
+           '    <li><div><b>收完按「複製未交名單」</b><span>貼到群組回報老師，不用自己抄</span></div></li>\n'
+           '  </ol>\n\n'
+           '  <section class="when">\n    <h2>畫面上的顏色</h2>\n    <div class="rows">\n'
+           '      <div class="row"><span class="pill p1">已交</span>綠色，掃到就變綠</div>\n'
+           '      <div class="row"><span class="pill p2">補交</span>橘色，先掃控制條碼 97 切換再掃座號</div>\n'
+           '      <div class="row"><span class="pill p3">未交</span>白色，最下面會列出還差哪幾號</div>\n'
+           '    </div>\n'
+           '    <p class="note">同一個人掃兩次不會重複計算，會出現黃色「已經登記過了」。<br>'
+           '掃錯人按「復原上一筆」，或掃控制條碼 98。<br>'
+           '座號格子點一下會在 未交 → 已交 → 補交 之間循環，可以手動更正。</p>\n'
+           '  </section>\n\n'
+           '  <footer>紀錄存在雲端，老師和小老師看到同一份<br>'
+           '<a href="%s">列印座號條碼標籤</a></footer>\n'
+           '</div>\n<div id="toast" role="status" aria-live="polite"></div>\n'
+           '<script>\n'
+           '(function(){\n'
+           '  var URL_ = document.getElementById("url").textContent.trim();\n'
+           '  var t = document.getElementById("toast");\n'
+           '  function toast(m){ t.textContent = m; t.classList.add("show"); clearTimeout(toast._t);\n'
+           '    toast._t = setTimeout(function(){ t.classList.remove("show"); }, 2400); }\n'
+           '  document.getElementById("copy").addEventListener("click", async function(){\n'
+           '    try{\n'
+           '      if(navigator.share){ await navigator.share({title:"作業繳交清點", url:URL_}); return; }\n'
+           '      await navigator.clipboard.writeText(URL_);\n'
+           '      toast("連結已複製");\n'
+           '    }catch(e){\n'
+           '      if(e && e.name === "AbortError") return;\n'
+           '      try{ await navigator.clipboard.writeText(URL_); toast("連結已複製"); }\n'
+           '      catch(e2){ toast("請長按上方網址手動複製"); }\n'
+           '    }\n'
+           '  });\n'
+           '})();\n'
+           '</script>\n</body>\n</html>\n'
+           % (html.escape(klass), SHARE_CSS, html.escape(school), html.escape(term),
+              html.escape(klass), qr_scalable(url_base), html.escape(url_base),
+              html.escape(url_base), html.escape(labels_href)))
+    with open(out, "w", encoding="utf-8") as f:
+        f.write(doc)
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--seats", type=int, default=25)
     ap.add_argument("--klass", default="六年三班")
     ap.add_argument("--school", default="永福國小")
+    ap.add_argument("--term", default="115 學年度第一學期")
     ap.add_argument("--url", default="https://simon05091004.github.io/tw-premarket/yfes-115-1-homework.html")
     ap.add_argument("--names", default="", help="姓名檔，一行一位，依座號順序")
     ap.add_argument("--out", default="docs/yfes-115-1-homework-labels.html")
@@ -216,6 +417,12 @@ def main():
         names = [l.strip() for l in open(a.names, encoding="utf-8")]
     out = build(a.seats, a.klass, a.school, a.url, names, a.out)
     print("寫出", out, "／", a.seats, "個座號 + 8 個控制碼")
+    base = a.out[:-len("-labels.html")] if a.out.endswith("-labels.html") else os.path.splitext(a.out)[0]
+    share = build_share(a.klass, a.school, a.term, a.url,
+                        os.path.basename(out), base + "-share.html")
+    print("寫出", share)
+    png = qr_png(a.url, base + "-qr.png")
+    print("寫出", png)
 
 
 if __name__ == "__main__":
