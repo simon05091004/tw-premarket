@@ -205,7 +205,7 @@ def build(seats, klass, school, url_base, names, out):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--seats", type=int, default=25)
-    ap.add_argument("--klass", default="六年一班")
+    ap.add_argument("--klass", default="六年三班")
     ap.add_argument("--school", default="永福國小")
     ap.add_argument("--url", default="https://simon05091004.github.io/tw-premarket/yfes-115-1-homework.html")
     ap.add_argument("--names", default="", help="姓名檔，一行一位，依座號順序")
