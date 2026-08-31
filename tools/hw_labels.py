@@ -192,10 +192,11 @@ def gcell(no, label="", bw=26, bh=9):
             % (no, barcode_svg(no, bw, bh), html.escape(label)))
 
 
-def build(seats, klass, school, url_base, names, out):
+def build(seats, klass, school, url_base, names, out, cards=False):
     sheets = []
     per_page = 15
-    pages = [list(range(i + 1, min(i + per_page, seats) + 1)) for i in range(0, seats, per_page)]
+    pages = ([list(range(i + 1, min(i + per_page, seats) + 1)) for i in range(0, seats, per_page)]
+             if cards else [])
     for pi, page in enumerate(pages, start=1):
         cards = "".join(card("%02d" % n, names[n - 1] if n <= len(names) else "", url_base, klass)
                         for n in page)
@@ -215,7 +216,7 @@ def build(seats, klass, school, url_base, names, out):
     sheets.append(
         '<section class="sheet"><div class="shead"><h1>%s　%s　講桌總表</h1>'
         '<span class="sub">整張放講桌，收一本掃一格</span>'
-        '<span class="pg">第 %d／%d 頁</span></div>'
+        '<span class="pg">%s</span></div>'
         '<div class="grid">%s</div>'
         '<div class="ctrl"><h2>控制條碼</h2>'
         '<p>不用碰螢幕就能換作業項目。掃 91–96 切換項目，掃 97 在「已交／補交」之間切換，掃 98 復原上一筆。</p>'
@@ -227,12 +228,13 @@ def build(seats, klass, school, url_base, names, out):
         '<b>系統網址</b>　%s</div>'
         '<div class="entry">%s<span>小老師掃這裡<br>直接進系統</span></div>'
         '</div></div></section>'
-        % (html.escape(school), html.escape(klass), len(pages) + 1, len(pages) + 1,
+        % (html.escape(school), html.escape(klass),
+           ("第 %d／%d 頁" % (len(pages) + 1, len(pages) + 1)) if pages else "普通白紙即可",
            grid, ctrl, html.escape(url_base), qr_svg(url_base, 24)))
 
     doc = ('<!doctype html>\n<html lang="zh-Hant">\n<head>\n<meta charset="utf-8">\n'
            '<meta name="viewport" content="width=device-width,initial-scale=1">\n'
-           '<title>%s 座號條碼標籤</title>\n<meta name="robots" content="noindex,nofollow">\n'
+           '<title>%s 講桌總表</title>\n<meta name="robots" content="noindex,nofollow">\n'
            '<link rel="preconnect" href="https://fonts.googleapis.com">\n'
            '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n'
            '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?'
@@ -240,10 +242,13 @@ def build(seats, klass, school, url_base, names, out):
            '<style>%s</style>\n</head>\n<body>\n'
            '<div class="bar-toolbar"><button type="button" onclick="window.print()">列印／存成 PDF</button>'
            '<a href="%s">回清點系統</a>'
-           '<span>A4 直式，共 %d 頁。列印時請關掉「配合頁面縮放」以外的縮放設定，條碼才不會失真。</span></div>\n'
+           '<span>A4 直式，共 %d 頁，普通白紙列印即可。座號貼紙請印 '
+           '<a href="%s" style="color:#1e1c19">標籤貼紙頁</a>。</span></div>\n'
            '%s\n</body>\n</html>\n'
            % (html.escape(klass), CSS, html.escape(os.path.basename(url_base)),
-              len(pages) + 1, "\n".join(sheets)))
+              len(pages) + 1,
+              html.escape(os.path.basename(out).replace('-labels.html', '-stickers.html')),
+              "\n".join(sheets)))
     with open(out, "w", encoding="utf-8") as f:
         f.write(doc)
     return out
@@ -373,7 +378,7 @@ def build_share(klass, school, term, url_base, labels_href, out):
            '座號格子點一下會在 未交 → 已交 → 補交 之間循環，可以手動更正。</p>\n'
            '  </section>\n\n'
            '  <footer>紀錄存在雲端，老師和小老師看到同一份<br>'
-           '<a href="%s">列印座號條碼標籤</a></footer>\n'
+           '<a href="%s">列印座號標籤貼紙</a></footer>\n'
            '</div>\n<div id="toast" role="status" aria-live="polite"></div>\n'
            '<script>\n'
            '(function(){\n'
@@ -402,6 +407,126 @@ def build_share(klass, school, term, url_base, labels_href, out):
     return out
 
 
+
+# ── 標籤貼紙（A4 模切標籤，預設 3 欄 × 10 列 = 30 格，70 × 29.7 mm 無邊界）──
+STICKER_CSS = """
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:#f4f2ee;color:#1e1c19;
+  font:14px/1.6 "Noto Sans TC",-apple-system,"PingFang TC","Microsoft JhengHei",sans-serif}
+svg{display:block} svg rect,svg path{fill:#000}
+.stick{position:relative;width:%(pw)smm;height:%(ph)smm;margin:12px auto;background:#fff;
+  box-shadow:0 2px 14px rgba(0,0,0,.13);overflow:hidden}
+.cell{position:absolute;width:%(cw)smm;height:%(ch)smm;overflow:hidden;
+  display:flex;align-items:center;gap:1.6mm;padding:2mm 3mm}
+.cell .idb{flex:0 0 %(idw)smm;text-align:center}
+.cell .no{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;font-size:23px;
+  font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.cell .nm{font-size:10px;color:#3a352e;line-height:1.25;margin-top:.8mm;word-break:break-all}
+.cell .mid{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:.7mm}
+.cell .mid .bc{width:100%%}
+.cell .cap{font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;font-size:8px;
+  letter-spacing:.14em;color:#6d675e;white-space:nowrap}
+.cell .qr{flex:0 0 auto}
+.cell.ctrl .no{font-size:17px}
+.cell.ctrl .nm{font-size:9px;color:#6d675e}
+.cell .ctrltxt{flex:0 0 16mm;font-size:10px;line-height:1.35;color:#3a352e;text-align:center}
+/* 校正用格線：螢幕上一直看得到，列印時只有勾了「印格線」才會印出來 */
+.guide{position:absolute;border:.2mm dashed #c8c2b6;pointer-events:none}
+.stbar{max-width:%(pw)smm;margin:14px auto 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+  font-size:13px;color:#6d675e}
+.stbar button{appearance:none;font:inherit;font-size:13.5px;cursor:pointer;border:1px solid #ddd8cf;
+  background:#fff;color:#1e1c19;border-radius:9px;padding:7px 13px}
+.stbar label{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+.sthint{max-width:%(pw)smm;margin:6px auto 0;font-size:12.5px;color:#6d675e;line-height:1.85}
+.sthint b{color:#1e1c19}
+@media print{
+  html,body{background:#fff}
+  .stbar,.sthint{display:none}
+  .stick{margin:0;box-shadow:none;break-after:page}
+  .stick:last-of-type{break-after:auto}
+  body:not(.showguide) .guide{display:none}
+  @page{size:A4;margin:0}
+}
+"""
+
+
+def sticker_cell(kind, no, name, url_base, klass, cw, ch, idw):
+    """一格標籤：左邊大座號，中間條碼，右邊 QR。尺寸跟著格子大小縮放。"""
+    inner = cw - 6 - idw - 1.6 * 2          # 扣掉左右內距與兩個間隙
+    qrw = min(16.0, ch - 6)
+    bcw = max(18.0, inner - qrw)
+    bch = min(9.0, ch - 12)
+    if kind == "seat":
+        return ('<div class="idb"><div class="no">%s</div><div class="nm">%s</div></div>'
+                '<div class="mid">%s<div class="cap">%s　%s</div></div>%s'
+                % (no, html.escape(name or ""), barcode_svg(no, bcw, bch),
+                   no, html.escape(klass), qr_svg("%s?s=%s" % (url_base, no), qrw)))
+    # 控制碼的條碼刻意跟座號同寬 —— 拉寬到整格反而讀不到，實測 29.8mm 這個寬度最穩
+    return ('<div class="idb"><div class="no">%s</div><div class="nm">控制碼</div></div>'
+            '<div class="mid">%s<div class="cap">%s</div></div>'
+            '<div class="ctrltxt">%s</div>'
+            % (no, barcode_svg(no, bcw, bch), no, html.escape(name or "")))
+
+
+CTRL_LABELS = {"91": "第 1 項", "92": "第 2 項", "93": "第 3 項", "94": "第 4 項",
+               "95": "第 5 項", "96": "第 6 項", "97": "已交／補交", "98": "復原上一筆"}
+
+
+def build_stickers(seats, klass, school, url_base, names, out,
+                   cols=3, rows=10, cw=70.0, ch=29.7, spares="91,92,93,94,98",
+                   ox=0.0, oy=0.0):
+    per = cols * rows
+    idw = 13.0 if cw < 60 else 15.0
+    spare_codes = [c.strip() for c in spares.split(",") if c.strip()]
+    slots = [("seat", "%02d" % n, names[n - 1] if n <= len(names) else "")
+             for n in range(1, seats + 1)]
+    slots += [("ctrl", c, CTRL_LABELS.get(c, "")) for c in spare_codes]
+
+    sheets, i = [], 0
+    while i < len(slots) or not sheets:
+        cells, guides = [], []
+        for k in range(per):
+            r, c = divmod(k, cols)
+            pos = 'left:%.3fmm;top:%.3fmm' % (ox + c * cw, oy + r * ch)
+            guides.append('<div class="guide" style="%s;width:%.3fmm;height:%.3fmm"></div>' % (pos, cw, ch))
+            if i + k >= len(slots):
+                continue
+            kind, no, name = slots[i + k]
+            cells.append('<div class="cell%s" style="%s">%s</div>'
+                         % (" ctrl" if kind == "ctrl" else "", pos,
+                            sticker_cell(kind, no, name, url_base, klass, cw, ch, idw)))
+        sheets.append('<section class="stick">%s%s</section>' % ("".join(guides), "".join(cells)))
+        i += per
+        if i >= len(slots):
+            break
+
+    css = STICKER_CSS % {"pw": 210, "ph": 297, "cw": cw, "ch": ch, "idw": idw}
+    doc = ('<!doctype html>\n<html lang="zh-Hant">\n<head>\n<meta charset="utf-8">\n'
+           '<meta name="viewport" content="width=device-width,initial-scale=1">\n'
+           '<title>%s 座號標籤貼紙</title>\n<meta name="robots" content="noindex,nofollow">\n'
+           '<link rel="preconnect" href="https://fonts.googleapis.com">\n'
+           '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n'
+           '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?'
+           'family=IBM+Plex+Mono:wght@600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap">\n'
+           '<style>%s</style>\n</head>\n<body>\n'
+           '<div class="stbar"><button type="button" onclick="window.print()">列印／存成 PDF</button>'
+           '<label><input type="checkbox" id="g" onchange="document.body.classList.toggle(\'showguide\',this.checked)">'
+           '印出格線（試位用）</label>'
+           '<a href="%s" style="color:#6d675e">回清點系統</a></div>\n'
+           '<div class="sthint"><b>列印設定很重要</b>　紙張 A4、邊界選「<b>無</b>」、縮放固定 <b>100%%</b>'
+           '（不要勾「配合頁面調整大小」），否則會整片位移對不到模切線。<br>'
+           '<b>先試位</b>　勾「印出格線」用普通白紙印一張，疊在標籤貼紙上對格子，'
+           '確認對得上再換貼紙印。<br>'
+           '<b>規格</b>　%d 欄 × %d 列，每格 %.4gmm × %.4gmm，共 %d 格；'
+           '前 %d 格是座號 01–%02d，其餘是控制碼。</div>\n'
+           '%s\n</body>\n</html>\n'
+           % (html.escape(klass), css, html.escape(os.path.basename(url_base)),
+              cols, rows, cw, ch, per, seats, seats, "\n".join(sheets)))
+    with open(out, "w", encoding="utf-8") as f:
+        f.write(doc)
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--seats", type=int, default=25)
@@ -411,18 +536,31 @@ def main():
     ap.add_argument("--url", default="https://simon05091004.github.io/tw-premarket/yfes-115-1-homework.html")
     ap.add_argument("--names", default="", help="姓名檔，一行一位，依座號順序")
     ap.add_argument("--out", default="docs/yfes-115-1-homework-labels.html")
+    ap.add_argument("--st-cols", type=int, default=3, help="標籤貼紙欄數")
+    ap.add_argument("--st-rows", type=int, default=10, help="標籤貼紙列數")
+    ap.add_argument("--st-w", type=float, default=70.0, help="每格寬 mm")
+    ap.add_argument("--st-h", type=float, default=29.7, help="每格高 mm")
+    ap.add_argument("--st-ox", type=float, default=0.0, help="整片左右微調 mm，印偏了才用")
+    ap.add_argument("--st-oy", type=float, default=0.0, help="整片上下微調 mm，印偏了才用")
+    ap.add_argument("--st-spares", default="91,92,93,94,98", help="多出來的格子放哪些控制碼")
+    ap.add_argument("--cards", action="store_true", help="另外印普通白紙剪貼用的座號卡")
     a = ap.parse_args()
     names = []
     if a.names and os.path.exists(a.names):
         names = [l.strip() for l in open(a.names, encoding="utf-8")]
-    out = build(a.seats, a.klass, a.school, a.url, names, a.out)
-    print("寫出", out, "／", a.seats, "個座號 + 8 個控制碼")
+    out = build(a.seats, a.klass, a.school, a.url, names, a.out, cards=a.cards)
+    print("寫出", out, "／ 講桌總表" + ("＋剪貼卡片" if a.cards else ""))
     base = a.out[:-len("-labels.html")] if a.out.endswith("-labels.html") else os.path.splitext(a.out)[0]
     share = build_share(a.klass, a.school, a.term, a.url,
-                        os.path.basename(out), base + "-share.html")
+                        os.path.basename(base) + "-stickers.html", base + "-share.html")
     print("寫出", share)
     png = qr_png(a.url, base + "-qr.png")
     print("寫出", png)
+    st = build_stickers(a.seats, a.klass, a.school, a.url, names, base + "-stickers.html",
+                        cols=a.st_cols, rows=a.st_rows, cw=a.st_w, ch=a.st_h,
+                        spares=a.st_spares, ox=a.st_ox, oy=a.st_oy)
+    print("寫出", st, "／", a.st_cols, "欄 ×", a.st_rows, "列，每格",
+          "%.4g × %.4g mm" % (a.st_w, a.st_h))
 
 
 if __name__ == "__main__":
