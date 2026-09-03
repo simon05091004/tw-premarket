@@ -19,6 +19,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import httpx
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from premarket import analyze, fetch, main as main_mod  # noqa: E402
@@ -137,6 +139,77 @@ class TestTruncationDetection(unittest.TestCase):
             self.assertEqual(
                 analyze.generate_brief({"missing": []}, session="postmarket"), "被截斷的開頭"
             )
+
+
+class TestApiErrorClassification(unittest.TestCase):
+    """
+    API 失敗要分成「要人動手」與「等下次排程」兩類。
+
+    背景：金鑰會定期到期（2026-09-05 那把就是），失效時原本只會噴一坨
+    AuthenticationError 的 traceback，要往上滾才看得懂該做什麼。
+    而限流／過載長得很像，處理方式卻完全相反 —— 前者要換 secret，
+    後者放著等備援排程重跑就好。
+    """
+
+    def _raising_client(self, exc: BaseException):
+        class FakeMessages:
+            def create(self, **_kw):
+                raise exc
+
+        class FakeClient:
+            def __init__(self, **_kw):
+                self.messages = FakeMessages()
+
+        return FakeClient
+
+    def _call(self, exc: BaseException):
+        with (
+            patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-not-used"}),
+            patch.object(analyze.anthropic, "Anthropic", self._raising_client(exc)),
+        ):
+            return analyze.generate_brief({"missing": []}, session="postmarket")
+
+    @staticmethod
+    def _status_error(cls, status: int):
+        req = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+        return cls("boom", response=httpx.Response(status, request=req), body=None)
+
+    def test_expired_key_becomes_actionable_message(self) -> None:
+        with self.assertRaises(analyze.APIKeyInvalid) as ctx:
+            self._call(self._status_error(analyze.anthropic.AuthenticationError, 401))
+        self.assertIn("ANTHROPIC_API_KEY", str(ctx.exception), "訊息要指名該去換哪個 secret")
+
+    def test_permission_denied_is_also_a_key_problem(self) -> None:
+        with self.assertRaises(analyze.APIKeyInvalid):
+            self._call(self._status_error(analyze.anthropic.PermissionDeniedError, 403))
+
+    def test_rate_limit_is_transient(self) -> None:
+        with self.assertRaises(analyze.APIUnavailable):
+            self._call(self._status_error(analyze.anthropic.RateLimitError, 429))
+
+    def test_overloaded_is_transient(self) -> None:
+        with self.assertRaises(analyze.APIUnavailable):
+            self._call(self._status_error(analyze.anthropic.OverloadedError, 529))
+
+    def test_connection_error_is_transient(self) -> None:
+        req = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+        with self.assertRaises(analyze.APIUnavailable):
+            self._call(analyze.anthropic.APIConnectionError(request=req))
+
+    def test_unclassified_error_keeps_its_traceback(self) -> None:
+        # 400／404 代表模型名或參數被改壞了，包裝成人話反而蓋掉線索
+        with self.assertRaises(analyze.anthropic.BadRequestError):
+            self._call(self._status_error(analyze.anthropic.BadRequestError, 400))
+
+    def test_main_exits_1_without_writing_files(self) -> None:
+        """主流程要把這些當成失敗，且不留下半份報告。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmpdir = Path(tmp)
+            code = run_main(
+                analyze.APIKeyInvalid("金鑰過期，請更新 ANTHROPIC_API_KEY"), tmpdir
+            )
+            self.assertEqual(code, 1)
+            self.assertEqual(sorted(p.name for p in tmpdir.glob("*.md")), [])
 
 
 class TestTargetDate(unittest.TestCase):

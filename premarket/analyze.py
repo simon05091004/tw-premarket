@@ -19,8 +19,37 @@ MAX_TOKENS = 16000
 MIN_BRIEF_CHARS = 500  # 低於此長度視為產出失敗（正常報告 1500 字元以上）
 
 
-class BriefTruncated(RuntimeError):
+class BriefUnavailable(RuntimeError):
+    """
+    產不出報告的已知原因。
+
+    訊息本身就是寫給人看的說明,主流程直接印出來即可 —— 不必再翻 traceback。
+    """
+
+
+class BriefTruncated(BriefUnavailable):
     """回應撞到 max_tokens —— 報告不完整,不可發布。"""
+
+
+class APIKeyInvalid(BriefUnavailable):
+    """金鑰無效、過期或沒權限 —— 重試沒有意義,要人去換 secret。"""
+
+
+class APIUnavailable(BriefUnavailable):
+    """限流、過載、連線問題 —— 暫時性的,下一次排程（含備援那次）就可能過。"""
+
+
+# 只翻譯這兩類：一類要人動手換金鑰，一類等下次排程就好，處理方式天差地遠。
+# 其餘（400 參數錯誤、404 模型名打錯…）代表程式或設定被改壞了,
+# 留原始 traceback 反而資訊最多,不要包裝。
+_KEY_ERRORS = (anthropic.AuthenticationError, anthropic.PermissionDeniedError)
+_TRANSIENT_ERRORS = (
+    anthropic.RateLimitError,
+    anthropic.OverloadedError,
+    anthropic.InternalServerError,
+    anthropic.APIConnectionError,  # APITimeoutError 是它的子類
+)
+
 PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 PROMPT_FILES = {
     "premarket": "premarket_system.md",
@@ -94,12 +123,25 @@ def generate_brief(
         MAX_TOKENS,
     )
 
-    resp = client.messages.create(
-        model=MODEL,
-        max_tokens=MAX_TOKENS,
-        system=system_prompt,
-        messages=[{"role": "user", "content": user_content}],
-    )
+    try:
+        resp = client.messages.create(
+            model=MODEL,
+            max_tokens=MAX_TOKENS,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_content}],
+        )
+    except _KEY_ERRORS as exc:
+        raise APIKeyInvalid(
+            f"API 金鑰無效或已過期（{type(exc).__name__}）。"
+            "請到 Console 產生新金鑰，再更新 GitHub 的 "
+            "Settings → Secrets and variables → Actions → ANTHROPIC_API_KEY。"
+            "在換好之前每次排程都會以同樣的方式失敗。"
+        ) from exc
+    except _TRANSIENT_ERRORS as exc:
+        raise APIUnavailable(
+            f"Anthropic API 暫時不可用（{type(exc).__name__}）：{exc}。"
+            "這是暫時性的,備援排程會再試一次,不需要手動處理。"
+        ) from exc
 
     text = "".join(b.text for b in resp.content if b.type == "text").strip()
     log.info(

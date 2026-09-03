@@ -263,6 +263,10 @@ def main() -> int:
     except analyze.BriefTruncated as exc:
         log.error("報告不完整，不寫出檔案: %s", exc)
         return 1
+    except analyze.BriefUnavailable as exc:
+        # 金鑰過期／限流／過載。訊息已經是人話，不需要 traceback。
+        log.error("%s", exc)
+        return 1
 
     # 檢查放在寫檔之前：截斷的報告一旦寫出去就會被 workflow commit 並發布，
     # 而且 exit code 0 會讓 Actions 顯示綠勾,沒有人會發現。
