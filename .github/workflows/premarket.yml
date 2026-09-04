@@ -83,8 +83,23 @@ jobs:
         run: |
           MSG="台股盤前分析 $(date +%m/%d) 已更新
           ${PAGES_URL:-https://github.com/${{ github.repository }}}"
-          curl -sS -X POST https://api.line.me/v2/bot/message/broadcast \
+          # 一定要看回應碼：curl 沒加 --fail 的話，LINE 回 401 它照樣 exit 0，
+          # step 會標成綠的，通知默默停掉沒有人會發現。
+          # 連線失敗時 curl 自己會非零結束，用 || 接住才不會被 bash -e 直接砍掉。
+          CODE=$(curl -sS -X POST https://api.line.me/v2/bot/message/broadcast \
             -H "Authorization: Bearer $LINE_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$(jq -n --arg t "$MSG" '{messages:[{type:"text",text:$t}]}')" \
-            -o /dev/null -w "LINE 回應碼 %{http_code}\n"
+            -o /dev/null -w "%{http_code}") || CODE="000"
+          echo "LINE 回應碼 $CODE"
+          case "$CODE" in
+            2*) ;;
+            401|403)
+              # 報告已經 commit 並 push 完了，這裡失敗不會少一份報告，只是通知沒送出。
+              echo "::error::LINE 權杖無效或已過期，請更新 LINE_CHANNEL_ACCESS_TOKEN secret。報告本身已發布，只有通知沒送出。"
+              exit 1 ;;
+            *)
+              # 5xx／連線問題屬暫時性，標成 warning 就好 —— 不值得為了它把整個 run 變紅。
+              echo "::warning::LINE 廣播失敗（HTTP $CODE），可能是暫時性問題。報告本身已發布。"
+              ;;
+          esac
