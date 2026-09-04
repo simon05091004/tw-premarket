@@ -19,8 +19,6 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import httpx
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from premarket import analyze, fetch, main as main_mod  # noqa: E402
@@ -169,10 +167,22 @@ class TestApiErrorClassification(unittest.TestCase):
         ):
             return analyze.generate_brief({"missing": []}, session="postmarket")
 
-    @staticmethod
-    def _status_error(cls, status: int):
-        req = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
-        return cls("boom", response=httpx.Response(status, request=req), body=None)
+    class _FakeHTTPResponse:
+        """
+        anthropic 例外建構子會碰到的欄位就這三個，不需要真的 HTTP 物件。
+
+        刻意不 import httpx：SDK 1.x 起改用 httpx2 當底層，測試若直接相依
+        HTTP 套件，會隨著 SDK 換底層而在 CI 整個掛掉 —— 2026-09-04 就是這樣,
+        一行 import 連垮四次排程（盤後盤前的主排程與備援各一）。
+        """
+
+        def __init__(self, status_code: int) -> None:
+            self.status_code = status_code
+            self.request = None
+            self.headers: dict[str, str] = {}
+
+    def _status_error(self, cls, status: int):
+        return cls("boom", response=self._FakeHTTPResponse(status), body=None)
 
     def test_expired_key_becomes_actionable_message(self) -> None:
         with self.assertRaises(analyze.APIKeyInvalid) as ctx:
@@ -192,9 +202,8 @@ class TestApiErrorClassification(unittest.TestCase):
             self._call(self._status_error(analyze.anthropic.OverloadedError, 529))
 
     def test_connection_error_is_transient(self) -> None:
-        req = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
         with self.assertRaises(analyze.APIUnavailable):
-            self._call(analyze.anthropic.APIConnectionError(request=req))
+            self._call(analyze.anthropic.APIConnectionError(request=None))
 
     def test_unclassified_error_keeps_its_traceback(self) -> None:
         # 400／404 代表模型名或參數被改壞了，包裝成人話反而蓋掉線索
