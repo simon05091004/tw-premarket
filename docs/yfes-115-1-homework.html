@@ -305,7 +305,9 @@ const CFG = {
   klass:  "六年三班",
   title:  "學生作業繳交清點",
   seats:  25,                     /* 班上人數 = 座號 01 … 25 */
-  ctrlItemFrom: 91,               /* 條碼 91–96 = 切換到第 1–6 個作業項目 */
+  maxItems: 15,                   /* 作業項目上限 */
+  ctrlItemFrom: 51,               /* 條碼 51–65 = 切換到第 1–15 個作業項目 */
+  ctrlItemAlias: 91,              /* 條碼 91–96 = 第 1–6 項，讓先前印好的標籤繼續有效 */
   ctrlMode: 97,                   /* 條碼 97 = 已交／補交 切換 */
   ctrlUndo: 98                    /* 條碼 98 = 復原上一筆 */
 };
@@ -727,7 +729,9 @@ function parseCode(raw){
   const n = parseInt(m[1], 10);
   if(n >= 1 && n <= CFG.seats) return { type:"seat", n:n };
   const idx = n - CFG.ctrlItemFrom;
-  if(idx >= 0 && idx < 6) return { type:"item", i:idx };
+  if(idx >= 0 && idx < CFG.maxItems) return { type:"item", i:idx };
+  const alias = n - CFG.ctrlItemAlias;
+  if(alias >= 0 && alias < 6) return { type:"item", i:alias };
   if(n === CFG.ctrlMode) return { type:"mode" };
   if(n === CFG.ctrlUndo) return { type:"undo" };
   return { type:"bad", raw:s };
@@ -1053,10 +1057,28 @@ const PC = { ink:"#1e1c19", dim:"#6d675e", faint:"#a9a297", line:"#c9c3b8", hair
 const FS = '"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif';
 const FM = '"IBM Plex Mono",ui-monospace,Menlo,monospace';
 
+/** 欄位標題塞不下就縮字級、再塞不下就折行，最多三行 */
+function wrapHead(name, maxW){
+  const t = String(name || "");
+  for(let L = 1; L <= 3; L++){
+    const per = Math.ceil(t.length / L);
+    const fs = Math.min(12.5, maxW / Math.max(1, per));
+    if(fs >= 9 || L === 3){
+      const use = Math.max(7.5, fs), lines = [];
+      const n = Math.ceil(t.length / L);
+      for(let k = 0; k < L && k * n < t.length; k++) lines.push(t.slice(k * n, (k + 1) * n));
+      return { fs:Math.round(use * 10) / 10, lines:lines.length ? lines : [""] };
+    }
+  }
+}
+
 function renderSheetCanvas(scale){
   const its = items();
-  const PAD = 30, C0 = 52, C1 = 92, CW = Math.max(78, Math.min(120, 430 / its.length));
-  const HT = 76, HH = 34, RH = 25;
+  const PAD = 30, C0 = 52, C1 = 92, CW = Math.max(44, Math.min(120, 430 / its.length));
+  /* 項目多的時候欄位會變窄，標題自動縮小＋折行，不然「生字部首造詞」會滿出格子 */
+  const heads = its.map(it => wrapHead(it.name, CW - 6));
+  const headLines = heads.reduce((m, h) => Math.max(m, h.lines.length), 1);
+  const HT = 76, HH = Math.max(34, 18 + headLines * 13), RH = 25;
   const tableW = C0 + C1 + its.length * CW;
   const W = tableW + PAD * 2;
   const top = PAD + HT;
@@ -1084,9 +1106,11 @@ function renderSheetCanvas(scale){
   box(PAD + C0, top, C1, HH, PC.head); txt("姓名", PAD + C0 + C1 / 2, top + HH / 2, '600 12px ' + FS, PC.dim);
   its.forEach((it, i) => {
     box(cx(i), top, CW, HH, PC.head);
-    txt(it.name, cx(i) + CW / 2, top + HH / 2 - 6, '700 12.5px ' + FS, PC.ink);
+    const h = heads[i], lh = h.fs + 1.5;
+    const y0 = top + HH / 2 - 6 - (h.lines.length - 1) * lh / 2;
+    h.lines.forEach((ln, k) => txt(ln, cx(i) + CW / 2, y0 + k * lh, '700 ' + h.fs + 'px ' + FS, PC.ink));
     const c = counts(curDate, it.id);
-    txt((c.ok + c.late) + " / " + CFG.seats, cx(i) + CW / 2, top + HH / 2 + 9, '400 10px ' + FM, PC.dim);
+    txt((c.ok + c.late) + " / " + CFG.seats, cx(i) + CW / 2, top + HH - 9, '400 9.5px ' + FM, PC.dim);
   });
   SEATS().forEach((n, r) => {
     const y = top + HH + r * RH;
@@ -1133,7 +1157,8 @@ async function buildPdf(){
   if(document.fonts && document.fonts.ready){ try{ await document.fonts.ready; }catch(e){} }
   const cv = renderSheetCanvas(3);
   const img = await canvasImage(cv);
-  const PW = 595, PH = 842, M = 20;
+  const landscape = cv.width > cv.height;          /* 項目一多就自動轉橫式，不然縮到看不清楚 */
+  const PW = landscape ? 842 : 595, PH = landscape ? 595 : 842, M = 20;
   const s = Math.min((PW - 2*M) / cv.width, (PH - 2*M) / cv.height);
   const w = cv.width * s, h = cv.height * s, x = (PW - w) / 2, y = (PH - h) / 2;
   const content = "q " + w.toFixed(2) + " 0 0 " + h.toFixed(2) + " " + x.toFixed(2) + " " + y.toFixed(2) + " cm /Im0 Do Q\n";
@@ -1216,7 +1241,9 @@ function renderItemEditor(){
   ta.value = items().map(i => i.name).join("\n");
   ta.placeholder = "一行一個作業項目";
   box.appendChild(ta);
-  const p = el("p", "hint", "一行一個，最多 6 個（對應條碼 91–96）。改名不會影響舊紀錄；刪掉某一項，該項的歷史紀錄會留在雲端但不再顯示。");
+  const p = el("p", "hint", "一行一個，最多 " + CFG.maxItems + " 個（依序對應控制條碼 "
+    + pad2(CFG.ctrlItemFrom) + "–" + pad2(CFG.ctrlItemFrom + CFG.maxItems - 1)
+    + "；先前印的 91–96 仍然等於第 1–6 項）。改名不會影響舊紀錄；刪掉某一項，該項的歷史紀錄會留在雲端但不再顯示。");
   p.style.flexBasis = "100%";
   box.appendChild(p);
   const row = el("div", "btns");
@@ -1224,7 +1251,7 @@ function renderItemEditor(){
   const save = el("button", "btn pri", "儲存項目"); save.type = "button";
   const cancel = el("button", "btn", "取消"); cancel.type = "button";
   save.addEventListener("click", () => {
-    const lines = ta.value.split("\n").map(s => s.trim()).filter(Boolean).slice(0, 6);
+    const lines = ta.value.split("\n").map(s => s.trim()).filter(Boolean).slice(0, CFG.maxItems);
     if(!lines.length){ toast("至少要有一個作業項目"); return; }
     const next = reconcileItems(lines);
     editingItems = false;
@@ -1404,7 +1431,7 @@ refocus();
           && request.resource.data.rec is map
           && request.resource.data.rec.size() <= 250
           && request.resource.data.items is list
-          && request.resource.data.items.size() <= 12
+          && request.resource.data.items.size() <= 20
           && request.resource.data.names is list
           && request.resource.data.names.size() <= 60
           && request.resource.data.updated is string
@@ -1416,7 +1443,8 @@ refocus();
 
   條碼對照：
     01–25  學生座號
-    91–96  切換到第 1–6 個作業項目
+    51–65  切換到第 1–15 個作業項目
+    91–96  第 1–6 項的舊編號，仍然有效
     97     已交／補交 切換
     98     復原上一筆
   ═══════════════════════════════════════════════════════════════

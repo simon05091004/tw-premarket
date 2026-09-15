@@ -121,6 +121,23 @@ def qr_png(data, path, mm=52, dpi=300, error="q"):
     return path
 
 
+ITEM_FROM, MAX_ITEMS, ITEM_ALIAS = 51, 15, 91
+CTRL_LABELS = {"97": "已交／補交", "98": "復原上一筆"}
+for _i in range(MAX_ITEMS):
+    CTRL_LABELS["%02d" % (ITEM_FROM + _i)] = "第 %d 項" % (_i + 1)
+for _i in range(6):                      # 91–96 是舊編號，已經印出去的標籤仍然有效
+    CTRL_LABELS["%02d" % (ITEM_ALIAS + _i)] = "第 %d 項" % (_i + 1)
+
+
+def item_codes(item_names):
+    """有給項目名稱就一項一碼並標上真正的名字，否則預設印前六項。"""
+    if item_names:
+        names = item_names[:MAX_ITEMS]
+    else:
+        names = ["第 %d 項" % (i + 1) for i in range(6)]
+    return [("%02d" % (ITEM_FROM + i), n) for i, n in enumerate(names)]
+
+
 # ── 頁面 ──────────────────────────────────────────────────────────────────
 CSS = """
 *{box-sizing:border-box}
@@ -192,7 +209,7 @@ def gcell(no, label="", bw=26, bh=9):
             % (no, barcode_svg(no, bw, bh), html.escape(label)))
 
 
-def build(seats, klass, school, url_base, names, out, cards=False):
+def build(seats, klass, school, url_base, names, out, cards=False, item_names=None):
     sheets = []
     per_page = 15
     pages = ([list(range(i + 1, min(i + per_page, seats) + 1)) for i in range(0, seats, per_page)]
@@ -209,9 +226,7 @@ def build(seats, klass, school, url_base, names, out, cards=False):
 
     grid = "".join(gcell("%02d" % n, names[n - 1] if n <= len(names) else "")
                    for n in range(1, seats + 1))
-    ctrl_defs = [("91", "切到第 1 項"), ("92", "切到第 2 項"), ("93", "切到第 3 項"),
-                 ("94", "切到第 4 項"), ("95", "切到第 5 項"), ("96", "切到第 6 項"),
-                 ("97", "已交／補交"), ("98", "復原上一筆")]
+    ctrl_defs = item_codes(item_names) + [("97", "已交／補交"), ("98", "復原上一筆")]
     ctrl = "".join(gcell(c, t, 24, 8) for c, t in ctrl_defs)
     sheets.append(
         '<section class="sheet"><div class="shead"><h1>%s　%s　講桌總表</h1>'
@@ -219,7 +234,9 @@ def build(seats, klass, school, url_base, names, out, cards=False):
         '<span class="pg">%s</span></div>'
         '<div class="grid">%s</div>'
         '<div class="ctrl"><h2>控制條碼</h2>'
-        '<p>不用碰螢幕就能換作業項目。掃 91–96 切換項目，掃 97 在「已交／補交」之間切換，掃 98 復原上一筆。</p>'
+        '<p>不用碰螢幕就能換作業項目。掃 %s 依序切到各個作業項目，'
+        '掃 97 在「已交／補交」之間切換，掃 98 復原上一筆。'
+        '作業項目最多 15 個，對應 51–65；先前印的 91–96 仍然等於第 1–6 項。</p>'
         '<div class="grid">%s</div></div>'
         '<div class="note"><div class="notegrid"><div>'
         '<b>使用方式</b>　把掃描槍設成「掃完自動送出 Enter」，'
@@ -230,7 +247,9 @@ def build(seats, klass, school, url_base, names, out, cards=False):
         '</div></div></section>'
         % (html.escape(school), html.escape(klass),
            ("第 %d／%d 頁" % (len(pages) + 1, len(pages) + 1)) if pages else "普通白紙即可",
-           grid, ctrl, html.escape(url_base), qr_svg(url_base, 24)))
+           grid,
+           "、".join(c for c, _ in ctrl_defs[:-2]) if len(ctrl_defs) > 2 else "51–65",
+           ctrl, html.escape(url_base), qr_svg(url_base, 24)))
 
     doc = ('<!doctype html>\n<html lang="zh-Hant">\n<head>\n<meta charset="utf-8">\n'
            '<meta name="viewport" content="width=device-width,initial-scale=1">\n'
@@ -468,10 +487,6 @@ def sticker_cell(kind, no, name, url_base, klass, cw, ch, idw):
             % (no, barcode_svg(no, bcw, bch), no, html.escape(name or "")))
 
 
-CTRL_LABELS = {"91": "第 1 項", "92": "第 2 項", "93": "第 3 項", "94": "第 4 項",
-               "95": "第 5 項", "96": "第 6 項", "97": "已交／補交", "98": "復原上一筆"}
-
-
 def build_stickers(seats, klass, school, url_base, names, out,
                    cols=3, rows=10, cw=70.0, ch=29.7, spares="91,92,93,94,98",
                    ox=0.0, oy=0.0):
@@ -542,13 +557,16 @@ def main():
     ap.add_argument("--st-h", type=float, default=29.7, help="每格高 mm")
     ap.add_argument("--st-ox", type=float, default=0.0, help="整片左右微調 mm，印偏了才用")
     ap.add_argument("--st-oy", type=float, default=0.0, help="整片上下微調 mm，印偏了才用")
-    ap.add_argument("--st-spares", default="91,92,93,94,98", help="多出來的格子放哪些控制碼")
+    ap.add_argument("--st-spares", default="51,52,53,54,98", help="多出來的格子放哪些控制碼")
+    ap.add_argument("--items", default="", help="作業項目名稱，逗號分隔；給了就用真正的名字標在控制條碼上")
     ap.add_argument("--cards", action="store_true", help="另外印普通白紙剪貼用的座號卡")
     a = ap.parse_args()
     names = []
     if a.names and os.path.exists(a.names):
         names = [l.strip() for l in open(a.names, encoding="utf-8")]
-    out = build(a.seats, a.klass, a.school, a.url, names, a.out, cards=a.cards)
+    item_names = [x.strip() for x in a.items.split(",") if x.strip()]
+    out = build(a.seats, a.klass, a.school, a.url, names, a.out,
+                cards=a.cards, item_names=item_names)
     print("寫出", out, "／ 講桌總表" + ("＋剪貼卡片" if a.cards else ""))
     base = a.out[:-len("-labels.html")] if a.out.endswith("-labels.html") else os.path.splitext(a.out)[0]
     share = build_share(a.klass, a.school, a.term, a.url,
