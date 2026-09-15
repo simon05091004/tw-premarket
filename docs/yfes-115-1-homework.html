@@ -128,7 +128,6 @@ h2{margin:0;font-family:"Noto Serif TC",serif;font-weight:600;font-size:19px}
   transition:transform .07s,border-color .12s,background .12s}
 .seat:active{transform:translateY(1px)}
 .seat .no{font-family:"IBM Plex Mono",monospace;font-weight:700;font-size:23px;line-height:1;font-variant-numeric:tabular-nums}
-.seat .nm{font-size:12.5px;color:var(--dim);line-height:1.3;min-height:1em}
 .seat .mk{font-size:11.5px;font-weight:600;letter-spacing:.06em}
 .seat.s0{background:var(--card)} .seat.s0 .mk{color:var(--faint)}
 .seat.s1{background:var(--ok-bg);border-color:var(--ok-ln)} .seat.s1 .no,.seat.s1 .mk{color:var(--ok)}
@@ -140,7 +139,6 @@ h2{margin:0;font-family:"Noto Serif TC",serif;font-weight:600;font-size:19px}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .mchip{font-family:"IBM Plex Mono",monospace;font-size:14px;font-weight:600;background:var(--miss-bg);
   color:var(--miss);border:1px solid var(--miss-ln);border-radius:9px;padding:5px 9px;font-variant-numeric:tabular-nums}
-.mchip .nm{font-family:"Noto Sans TC",sans-serif;font-weight:500;margin-left:4px}
 .allok{font-size:15px;color:var(--ok);font-weight:600}
 
 /* ---------- 表格 ---------- */
@@ -263,16 +261,6 @@ textarea{width:100%;min-height:96px;font-family:inherit;font-size:14.5px;line-he
 </section>
 
 <section class="panel noprint">
-  <div class="panel-hd"><span class="kicker">名單</span><h2>學生姓名（可留空）</h2></div>
-  <div class="panel-bd">
-    <p class="hint">一行一位，依座號順序貼上即可；留空就只用座號。存檔後所有裝置都會看到。</p>
-    <textarea id="nameBox" placeholder="第 1 行 = 01 號&#10;第 2 行 = 02 號&#10;…"></textarea>
-    <div class="btns"><button class="btn pri" type="button" id="btnSaveNames">儲存名單</button>
-      <button class="btn" type="button" id="btnClearNames">清空名單</button></div>
-  </div>
-</section>
-
-<section class="panel noprint">
   <div class="panel-hd"><span class="kicker">匯出</span><h2>存檔與列印</h2></div>
   <div class="panel-bd">
     <div class="btns">
@@ -289,7 +277,7 @@ textarea{width:100%;min-height:96px;font-family:inherit;font-size:14.5px;line-he
   </div>
 </section>
 
-<p class="foot">永福國小　·　紀錄存在雲端，多台裝置即時同步<br>
+<p class="foot">永福國小　·　紀錄存在雲端，多台裝置即時同步　·　只記座號，不存學生姓名<br>
   <a href="yfes-115-1-homework-stickers.html">座號標籤貼紙</a> ·
   <a href="yfes-115-1-homework-labels.html">講桌總表</a> ·
   <a href="yfes-115-1-homework-share.html">小老師掃描入口</a></p>
@@ -327,7 +315,7 @@ const pad2 = n => String(n).padStart(2, "0");
 const SEATS = () => { const a = []; for(let i = 1; i <= CFG.seats; i++) a.push(i); return a; };
 function todayKey(){ const d = new Date(); return d.getFullYear() + "-" + pad2(d.getMonth()+1) + "-" + pad2(d.getDate()); }
 
-let state = { items:DEF_ITEMS.slice(), names:[], rec:{}, updated:null };
+let state = { items:DEF_ITEMS.slice(), rec:{}, updated:null };
 let curDate = todayKey();
 let curItem = DEF_ITEMS[0].id;
 let curMode = 1;                  /* 1 = 已交　2 = 補交 */
@@ -343,8 +331,8 @@ const dateShort = key => key.slice(5).replace("-", "/");
 
 const items = () => (state.items && state.items.length) ? state.items : DEF_ITEMS;
 const itemById = id => items().find(x => x.id === id) || items()[0];
-const nameOf = n => (state.names && state.names[n-1]) ? state.names[n-1] : "";
-const seatLabel = n => pad2(n) + (nameOf(n) ? " " + nameOf(n) : "");
+/* 這套系統只記座號，不收也不存學生姓名 */
+const seatLabel = n => pad2(n);
 
 /** 這一格（某天某項目）的原始字串 */
 function cellRaw(rec, d, it){ return ((rec[d] || {})[it]) || ""; }
@@ -404,7 +392,6 @@ function applyOp(doc, o){
   if(o.k === "s"){ setCell(doc.rec, o.d, o.it, withSeat(cellRaw(doc.rec, o.d, o.it), o.n, o.st)); return; }
   if(o.k === "r"){ setCell(doc.rec, o.d, o.it, o.val); return; }
   if(o.k === "i"){ doc.items = o.items; return; }
-  if(o.k === "n"){ doc.names = o.names; return; }
 }
 function mutate(op){
   applyOp(state, op);
@@ -419,7 +406,7 @@ function loadLocal(){
     const d = JSON.parse(raw);
     if(d && typeof d === "object"){
       state.rec   = d.rec || {};
-      state.names = d.names || [];
+      if(d.names) try{ localStorage.removeItem(LS_KEY); }catch(e){}   /* 舊版存過姓名，直接清掉 */
       if(d.items && d.items.length) state.items = d.items;
       state.updated = d.updated || null;
     }
@@ -456,7 +443,7 @@ async function initFirebase(){
         const d = snap.exists ? (snap.data() || {}) : {};
         state = {
           items:(d.items && d.items.length) ? d.items : DEF_ITEMS.slice(),
-          names:d.names || [], rec:d.rec || {}, updated:d.updated || null
+          rec:d.rec || {}, updated:d.updated || null
         };
         OPS.forEach(o => applyOp(state, o));      /* 還沒送出去的本機動作疊回來 */
         if(!itemById(curItem) || !items().some(x => x.id === curItem)) curItem = items()[0].id;
@@ -494,11 +481,11 @@ async function flush(){
       const d = snap.exists ? (snap.data() || {}) : {};
       const doc = {
         items:(d.items && d.items.length) ? d.items : DEF_ITEMS.slice(),
-        names:d.names || [],
         rec:d.rec ? JSON.parse(JSON.stringify(d.rec)) : {}
       };
       batch.forEach(o => applyOp(doc, o));
-      t.set(SYNC.ref, { items:doc.items, names:doc.names, rec:doc.rec,
+      /* 整份覆寫，舊文件若還留著 names 欄位會在這一步消失 */
+      t.set(SYNC.ref, { items:doc.items, rec:doc.rec,
                         updated:new Date().toISOString(), v:1 });
     });
     OPS.splice(0, batch.length);
@@ -582,7 +569,6 @@ function renderSeats(){
     const b = el("button", "seat s" + st);
     b.type = "button"; b.dataset.n = String(n);
     b.appendChild(el("span", "no", pad2(n)));
-    b.appendChild(el("span", "nm", nameOf(n)));
     b.appendChild(el("span", "mk", MK[st]));
     b.addEventListener("click", () => {
       const prev = statusOf(curDate, curItem, n);
@@ -622,7 +608,6 @@ function renderMiss(){
   const chips = el("div", "chips");
   m.forEach(n => {
     const c = el("span", "mchip", pad2(n));
-    if(nameOf(n)) c.appendChild(el("span", "nm", nameOf(n)));
     chips.appendChild(c);
   });
   box.appendChild(chips);
@@ -655,13 +640,12 @@ function renderStats(){
   if(!bad.length){ box.appendChild(el("p", "allok", "全部 " + S.checked + " 次清點都是全班到齊")); return; }
   const w = el("div", "tblwrap"), t = el("table", "rep");
   const th = el("thead"), tr = el("tr");
-  ["座號", "姓名", "未交", "補交", "清點次數"].forEach(h => tr.appendChild(el("th", null, h)));
+  ["座號", "未交", "補交", "清點次數"].forEach(h => tr.appendChild(el("th", null, h)));
   th.appendChild(tr); t.appendChild(th);
   const tb = el("tbody");
   bad.forEach(r => {
     const row = el("tr");
     row.appendChild(el("td", "num", pad2(r.n)));
-    row.appendChild(el("td", null, nameOf(r.n) || "—"));
     row.appendChild(el("td", "num" + (r.miss ? " miss" : ""), String(r.miss)));
     row.appendChild(el("td", "num", String(r.late)));
     row.appendChild(el("td", "num", String(S.checked)));
@@ -669,14 +653,9 @@ function renderStats(){
   });
   t.appendChild(tb); w.appendChild(t); box.appendChild(w);
 }
-function renderNames(){
-  const ta = document.getElementById("nameBox");
-  if(document.activeElement === ta) return;
-  ta.value = (state.names || []).join("\n");
-}
 function renderAll(){
   renderHeader(); renderDate(); renderTabs(); renderSeats();
-  renderTally(); renderMiss(); renderStats(); renderNames(); renderSync();
+  renderTally(); renderMiss(); renderStats(); renderSync();
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -759,7 +738,7 @@ function submitScan(raw){
 
   const n = c.n, prev = statusOf(curDate, curItem, n);
   if(prev === curMode){
-    feedback("dup", pad2(n), pad2(n) + " " + (nameOf(n) || "") + " 已經登記過了",
+    feedback("dup", pad2(n), pad2(n) + " 已經登記過了",
              (curMode === 2 ? "補交" : "已交") + "　·　" + itemById(curItem).name + "　·　重複掃描不會重複計算");
     flashSeat(n);
     return;
@@ -768,7 +747,7 @@ function submitScan(raw){
   UNDO.push({ d:curDate, it:curItem, n:n, prev:prev });
   if(UNDO.length > 60) UNDO.shift();
   const c2 = counts(curDate, curItem);
-  feedback("ok", pad2(n), pad2(n) + " " + (nameOf(n) || "") + "　" + (curMode === 2 ? "補交" : "已交"),
+  feedback("ok", pad2(n), pad2(n) + "　" + (curMode === 2 ? "補交" : "已交"),
            itemById(curItem).name + "　·　已收 " + (c2.ok + c2.late) + " / " + CFG.seats + "　·　還差 " + c2.miss + " 位");
   flashSeat(n);
 }
@@ -942,18 +921,18 @@ function usedCells(){
   return out;
 }
 function buildXlsx(){
-  const its = items(), nCol = 3 + its.length;
+  const its = items(), nCol = 2 + its.length;
   /* --- sheet1 本日清點 --- */
   const r1 = [];
   r1.push([{ v:sheetTitle(), s:S_TITLE }]);
   r1.push([{ v:curDate.replace(/-/g, "/") + "（" + wdOf(curDate) + "）　○ 已交　△ 補交　✕ 未交　·　產出 " + fmtStamp(new Date()), s:S_SUB }]);
   r1.push([]);
-  const hd = [{ v:"座號", s:S_HEAD }, { v:"姓名", s:S_HEAD }];
+  const hd = [{ v:"座號", s:S_HEAD }];
   its.forEach(it => hd.push({ v:it.name, s:S_HEAD }));
   hd.push({ v:"未交項數", s:S_HEAD });
   r1.push(hd);
   SEATS().forEach(n => {
-    const row = [{ v:pad2(n), s:S_CELL }, { v:nameOf(n), s:S_LEFT }];
+    const row = [{ v:pad2(n), s:S_CELL }];
     let miss = 0;
     its.forEach(it => {
       const s = statusOf(curDate, it.id, n);
@@ -963,11 +942,11 @@ function buildXlsx(){
     row.push({ v:String(miss), s:miss ? S_MISS : S_CELL });
     r1.push(row);
   });
-  const tot = [{ v:"已交", s:S_HEAD }, { v:"", s:S_HEAD }];
+  const tot = [{ v:"已交", s:S_HEAD }];
   its.forEach(it => { const c = counts(curDate, it.id); tot.push({ v:(c.ok + c.late) + " / " + CFG.seats, s:S_HEAD }); });
   tot.push({ v:"", s:S_HEAD });
   r1.push(tot);
-  const cols1 = [{ min:1, max:1, w:7 }, { min:2, max:2, w:12 }, { min:3, max:nCol, w:12 }];
+  const cols1 = [{ min:1, max:1, w:7 }, { min:2, max:nCol, w:12 }];
   const merges1 = ["A1:" + colName(nCol - 1) + "1", "A2:" + colName(nCol - 1) + "2"];
   const heights1 = [26, 18, 8, 24];
 
@@ -1032,9 +1011,9 @@ function buildCsv(){
   const lines = [];
   lines.push([sheetTitle() + "　" + curDate.replace(/-/g, "/")].map(q).join(","));
   lines.push(["○ 已交　△ 補交　✕ 未交"].map(q).join(","));
-  lines.push(["座號", "姓名"].concat(its.map(i => i.name)).concat(["未交項數"]).map(q).join(","));
+  lines.push(["座號"].concat(its.map(i => i.name)).concat(["未交項數"]).map(q).join(","));
   SEATS().forEach(n => {
-    const row = [pad2(n), nameOf(n)];
+    const row = [pad2(n)];
     let miss = 0;
     its.forEach(it => { const s = statusOf(curDate, it.id, n); if(s === 0) miss++; row.push(MARK[s]); });
     row.push(String(miss));
@@ -1074,17 +1053,40 @@ function wrapHead(name, maxW){
 
 function renderSheetCanvas(scale){
   const its = items();
-  const PAD = 30, C0 = 52, C1 = 92, CW = Math.max(44, Math.min(120, 430 / its.length));
+  const PAD = 30, C0 = 62, CW = Math.max(44, Math.min(120, 520 / its.length));
   /* 項目多的時候欄位會變窄，標題自動縮小＋折行，不然「生字部首造詞」會滿出格子 */
   const heads = its.map(it => wrapHead(it.name, CW - 6));
   const headLines = heads.reduce((m, h) => Math.max(m, h.lines.length), 1);
   const HT = 76, HH = Math.max(34, 18 + headLines * 13), RH = 25;
-  const tableW = C0 + C1 + its.length * CW;
+  const tableW = C0 + its.length * CW;
   const W = tableW + PAD * 2;
   const top = PAD + HT;
   const tableH = HH + CFG.seats * RH;
-  const missTxt = its.map(it => it.name + "：" + (missSeats(curDate, it.id).map(n => pad2(n)).join("、") || "全到齊"));
-  const FT = 22 + missTxt.length * 16;
+  /* 未交名單整班沒交時會很長，先量好字寬折行，不然右邊會被裁掉 */
+  const mc = document.createElement("canvas").getContext("2d");
+  mc.font = '600 11.5px ' + FS;
+  const labelW = Math.max(52, Math.min(150,
+    its.reduce((w, it) => Math.max(w, mc.measureText(it.name).width), 0) + 14));
+  mc.font = '400 11px ' + FS;
+  const wrapTo = (text, maxW) => {
+    const parts = text.split("、"), out = [];
+    let cur = "";
+    parts.forEach(pp => {
+      const t = cur ? cur + "、" + pp : pp;
+      if(cur && mc.measureText(t).width > maxW){ out.push(cur + "、"); cur = pp; }
+      else cur = t;
+    });
+    if(cur) out.push(cur);
+    return out;
+  };
+  const missRows = its.map(it => {
+    const m = missSeats(curDate, it.id);
+    return { name:it.name,
+             lines:m.length ? wrapTo(m.map(n => pad2(n)).join("、"), tableW - labelW - 4) : ["全到齊"],
+             all:!m.length };
+  });
+  const missLines = missRows.reduce((a, r) => a + r.lines.length, 0);
+  const FT = 22 + missLines * 15 + missRows.length * 3;
   const H = top + tableH + FT + PAD;
 
   const cv = document.createElement("canvas");
@@ -1101,9 +1103,8 @@ function renderSheetCanvas(scale){
   txt(curDate.replace(/-/g, "/") + "（" + wdOf(curDate) + "）　·　○ 已交　△ 補交　✕ 未交　·　產出 " + fmtStamp(new Date()),
       W / 2, PAD + 48, '400 11.5px ' + FS, PC.dim);
 
-  const cx = i => PAD + C0 + C1 + i * CW;
+  const cx = i => PAD + C0 + i * CW;
   box(PAD, top, C0, HH, PC.head); txt("座號", PAD + C0 / 2, top + HH / 2, '600 12px ' + FS, PC.dim);
-  box(PAD + C0, top, C1, HH, PC.head); txt("姓名", PAD + C0 + C1 / 2, top + HH / 2, '600 12px ' + FS, PC.dim);
   its.forEach((it, i) => {
     box(cx(i), top, CW, HH, PC.head);
     const h = heads[i], lh = h.fs + 1.5;
@@ -1116,7 +1117,6 @@ function renderSheetCanvas(scale){
     const y = top + HH + r * RH;
     if(r % 2) box(PAD, y, tableW, RH, PC.rowh);
     txt(pad2(n), PAD + C0 / 2, y + RH / 2, '600 13px ' + FM, PC.ink);
-    txt(nameOf(n) || "", PAD + C0 + C1 / 2, y + RH / 2, '400 12px ' + FS, PC.ink);
     its.forEach((it, i) => {
       const s = statusOf(curDate, it.id, n);
       const col = s === 1 ? PC.ok : s === 2 ? PC.late : PC.miss;
@@ -1126,14 +1126,19 @@ function renderSheetCanvas(scale){
   });
   for(let r = 0; r <= CFG.seats; r++) line(PAD, top + HH + r * RH, PAD + tableW, top + HH + r * RH, PC.hair);
   line(PAD, top + HH, PAD + tableW, top + HH, PC.line);
-  [0, C0, C0 + C1].forEach(x => line(PAD + x, top, PAD + x, top + tableH, PC.line));
+  [0, C0].forEach(x => line(PAD + x, top, PAD + x, top + tableH, PC.line));
   its.forEach((it, i) => line(cx(i), top, cx(i), top + tableH, PC.hair));
   g.strokeStyle = PC.line; g.lineWidth = 1.4; g.strokeRect(PAD, top, tableW, tableH);
 
   let fy = top + tableH + 16;
   txt("未交名單", PAD, fy, '700 11.5px ' + FS, PC.ink, "left");
-  missTxt.forEach((s, i) => {
-    txt(s, PAD + 62, fy + i * 16, '400 11px ' + FS, s.indexOf("全到齊") >= 0 ? PC.dim : PC.miss, "left");
+  fy += 16;
+  missRows.forEach(r => {
+    txt(r.name, PAD, fy, '600 11px ' + FS, PC.ink, "left");
+    r.lines.forEach((ln, k) => {
+      txt(ln, PAD + labelW, fy + k * 15, '400 11px ' + FS, r.all ? PC.dim : PC.miss, "left");
+    });
+    fy += r.lines.length * 15 + 3;
   });
   return cv;
 }
@@ -1366,19 +1371,6 @@ function wire(){
     }
   });
 
-  document.getElementById("btnSaveNames").addEventListener("click", () => {
-    const lines = document.getElementById("nameBox").value.split("\n").map(s => s.trim()).slice(0, CFG.seats);
-    while(lines.length && !lines[lines.length - 1]) lines.pop();
-    mutate({ k:"n", names:lines });
-    toast(lines.length ? "已儲存 " + lines.filter(Boolean).length + " 位學生姓名" : "名單已清空");
-    refocus();
-  });
-  document.getElementById("btnClearNames").addEventListener("click", () => {
-    document.getElementById("nameBox").value = "";
-    mutate({ k:"n", names:[] });
-    toast("名單已清空");
-  });
-
   document.getElementById("btnXlsx").addEventListener("click", async ev => {
     const b = ev.currentTarget; b.disabled = true;
     try{
@@ -1432,11 +1424,13 @@ refocus();
           && request.resource.data.rec.size() <= 250
           && request.resource.data.items is list
           && request.resource.data.items.size() <= 20
-          && request.resource.data.names is list
-          && request.resource.data.names.size() <= 60
           && request.resource.data.updated is string
           && request.resource.data.updated.size() <= 40;
       }
+
+  'names' 還留在 hasOnly 名單裡，但已經沒有任何檢查、程式也不再寫入。
+  留著只是為了讓還開著舊分頁的裝置不會在改規則的當下寫入失敗；
+  等所有裝置都重新整理過，可以把 'names' 從名單拿掉。
 
   hwCheck / 115-1 要和程式裡的 FIRE_COL / FIRE_ID 一致。
   換學期就換一個 FIRE_ID（例如 115-2），規則跟著改，舊資料留在原文件。

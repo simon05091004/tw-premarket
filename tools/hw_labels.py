@@ -194,14 +194,13 @@ svg{display:block} svg rect,svg path{fill:#000}
 """
 
 
-def card(no, name, url_base, klass):
+def card(no, url_base, klass):
     u = "%s?s=%s" % (url_base, no)
     return ('<div class="card">'
-            '<div class="top"><div class="no">%s</div><div class="nm">%s</div>%s</div>'
+            '<div class="top"><div class="no">%s</div><div class="nm"></div>%s</div>'
             '<div class="mid">%s<div class="cap">%s　%s</div></div>'
             '</div>'
-            % (no, html.escape(name or ""), qr_svg(u, 14),
-               barcode_svg(no, 44, 11), no, html.escape(klass)))
+            % (no, qr_svg(u, 14), barcode_svg(no, 44, 11), no, html.escape(klass)))
 
 
 def gcell(no, label="", bw=26, bh=9):
@@ -209,14 +208,13 @@ def gcell(no, label="", bw=26, bh=9):
             % (no, barcode_svg(no, bw, bh), html.escape(label)))
 
 
-def build(seats, klass, school, url_base, names, out, cards=False, item_names=None):
+def build(seats, klass, school, url_base, out, cards=False, item_names=None):
     sheets = []
     per_page = 15
     pages = ([list(range(i + 1, min(i + per_page, seats) + 1)) for i in range(0, seats, per_page)]
              if cards else [])
     for pi, page in enumerate(pages, start=1):
-        cards = "".join(card("%02d" % n, names[n - 1] if n <= len(names) else "", url_base, klass)
-                        for n in page)
+        cards = "".join(card("%02d" % n, url_base, klass) for n in page)
         sheets.append(
             '<section class="sheet"><div class="shead"><h1>%s　%s　座號條碼標籤</h1>'
             '<span class="sub">剪下貼在作業本封面　·　條碼＝座號，QR＝手機相機用</span>'
@@ -224,8 +222,7 @@ def build(seats, klass, school, url_base, names, out, cards=False, item_names=No
             '<div class="cards">%s</div></section>'
             % (html.escape(school), html.escape(klass), pi, len(pages) + 1, cards))
 
-    grid = "".join(gcell("%02d" % n, names[n - 1] if n <= len(names) else "")
-                   for n in range(1, seats + 1))
+    grid = "".join(gcell("%02d" % n) for n in range(1, seats + 1))
     ctrl_defs = item_codes(item_names) + [("97", "已交／補交"), ("98", "復原上一筆")]
     ctrl = "".join(gcell(c, t, 24, 8) for c, t in ctrl_defs)
     sheets.append(
@@ -469,32 +466,31 @@ svg{display:block} svg rect,svg path{fill:#000}
 """
 
 
-def sticker_cell(kind, no, name, url_base, klass, cw, ch, idw):
+def sticker_cell(kind, no, label, url_base, klass, cw, ch, idw):
     """一格標籤：左邊大座號，中間條碼，右邊 QR。尺寸跟著格子大小縮放。"""
     inner = cw - 6 - idw - 1.6 * 2          # 扣掉左右內距與兩個間隙
     qrw = min(16.0, ch - 6)
     bcw = max(18.0, inner - qrw)
     bch = min(9.0, ch - 12)
     if kind == "seat":
-        return ('<div class="idb"><div class="no">%s</div><div class="nm">%s</div></div>'
+        return ('<div class="idb"><div class="no">%s</div><div class="nm"></div></div>'
                 '<div class="mid">%s<div class="cap">%s　%s</div></div>%s'
-                % (no, html.escape(name or ""), barcode_svg(no, bcw, bch),
+                % (no, barcode_svg(no, bcw, bch),
                    no, html.escape(klass), qr_svg("%s?s=%s" % (url_base, no), qrw)))
     # 控制碼的條碼刻意跟座號同寬 —— 拉寬到整格反而讀不到，實測 29.8mm 這個寬度最穩
     return ('<div class="idb"><div class="no">%s</div><div class="nm">控制碼</div></div>'
             '<div class="mid">%s<div class="cap">%s</div></div>'
             '<div class="ctrltxt">%s</div>'
-            % (no, barcode_svg(no, bcw, bch), no, html.escape(name or "")))
+            % (no, barcode_svg(no, bcw, bch), no, html.escape(label or "")))
 
 
-def build_stickers(seats, klass, school, url_base, names, out,
+def build_stickers(seats, klass, school, url_base, out,
                    cols=3, rows=10, cw=70.0, ch=29.7, spares="91,92,93,94,98",
                    ox=0.0, oy=0.0):
     per = cols * rows
     idw = 13.0 if cw < 60 else 15.0
     spare_codes = [c.strip() for c in spares.split(",") if c.strip()]
-    slots = [("seat", "%02d" % n, names[n - 1] if n <= len(names) else "")
-             for n in range(1, seats + 1)]
+    slots = [("seat", "%02d" % n, "") for n in range(1, seats + 1)]
     slots += [("ctrl", c, CTRL_LABELS.get(c, "")) for c in spare_codes]
 
     sheets, i = [], 0
@@ -506,10 +502,10 @@ def build_stickers(seats, klass, school, url_base, names, out,
             guides.append('<div class="guide" style="%s;width:%.3fmm;height:%.3fmm"></div>' % (pos, cw, ch))
             if i + k >= len(slots):
                 continue
-            kind, no, name = slots[i + k]
+            kind, no, label = slots[i + k]
             cells.append('<div class="cell%s" style="%s">%s</div>'
                          % (" ctrl" if kind == "ctrl" else "", pos,
-                            sticker_cell(kind, no, name, url_base, klass, cw, ch, idw)))
+                            sticker_cell(kind, no, label, url_base, klass, cw, ch, idw)))
         sheets.append('<section class="stick">%s%s</section>' % ("".join(guides), "".join(cells)))
         i += per
         if i >= len(slots):
@@ -549,7 +545,6 @@ def main():
     ap.add_argument("--school", default="永福國小")
     ap.add_argument("--term", default="115 學年度第一學期")
     ap.add_argument("--url", default="https://simon05091004.github.io/tw-premarket/yfes-115-1-homework.html")
-    ap.add_argument("--names", default="", help="姓名檔，一行一位，依座號順序")
     ap.add_argument("--out", default="docs/yfes-115-1-homework-labels.html")
     ap.add_argument("--st-cols", type=int, default=3, help="標籤貼紙欄數")
     ap.add_argument("--st-rows", type=int, default=10, help="標籤貼紙列數")
@@ -561,11 +556,8 @@ def main():
     ap.add_argument("--items", default="", help="作業項目名稱，逗號分隔；給了就用真正的名字標在控制條碼上")
     ap.add_argument("--cards", action="store_true", help="另外印普通白紙剪貼用的座號卡")
     a = ap.parse_args()
-    names = []
-    if a.names and os.path.exists(a.names):
-        names = [l.strip() for l in open(a.names, encoding="utf-8")]
     item_names = [x.strip() for x in a.items.split(",") if x.strip()]
-    out = build(a.seats, a.klass, a.school, a.url, names, a.out,
+    out = build(a.seats, a.klass, a.school, a.url, a.out,
                 cards=a.cards, item_names=item_names)
     print("寫出", out, "／ 講桌總表" + ("＋剪貼卡片" if a.cards else ""))
     base = a.out[:-len("-labels.html")] if a.out.endswith("-labels.html") else os.path.splitext(a.out)[0]
@@ -574,7 +566,7 @@ def main():
     print("寫出", share)
     png = qr_png(a.url, base + "-qr.png")
     print("寫出", png)
-    st = build_stickers(a.seats, a.klass, a.school, a.url, names, base + "-stickers.html",
+    st = build_stickers(a.seats, a.klass, a.school, a.url, base + "-stickers.html",
                         cols=a.st_cols, rows=a.st_rows, cw=a.st_w, ch=a.st_h,
                         spares=a.st_spares, ox=a.st_ox, oy=a.st_oy)
     print("寫出", st, "／", a.st_cols, "欄 ×", a.st_rows, "列，每格",
