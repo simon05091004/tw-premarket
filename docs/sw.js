@@ -3,13 +3,16 @@
 // 對一份每日更新的財經報告來說，那比打不開更糟。
 // 圖示與 manifest 幾乎不變，用 cache-first 省流量。
 
-const CACHE = "tw-brief-v1";
+const CACHE = "tw-brief-v2";
 const SHELL = [
   "./index.html",
   "./latest-postmarket.html",
   "./manifest.json",
   "./icon-192.png",
   "./icon-512.png",
+  "./bus.html",
+  "./bus-manifest.json",
+  "./bus-icon-192.png",
 ];
 
 self.addEventListener("install", (e) => {
@@ -28,9 +31,18 @@ self.addEventListener("activate", (e) => {
   );
 });
 
+// 字型檔一年不會變，留著讓離線時排版不跑掉；其餘跨網域一律不進快取。
+const CACHEABLE_CROSS_ORIGIN = ["https://fonts.googleapis.com", "https://fonts.gstatic.com"];
+
 self.addEventListener("fetch", (e) => {
   const req = e.request;
   if (req.method !== "GET") return;
+
+  // 下面非 HTML 的那段是 cache-first。bus.html 打 TDX 查到站時間走的正是
+  // 跨網域 GET —— 一旦被快取，使用者就會一直看到第一次查到的秒數，
+  // 而且畫面上完全看不出來。所以跨網域只放行字型，其餘直接交給瀏覽器。
+  const origin = new URL(req.url).origin;
+  if (origin !== self.location.origin && CACHEABLE_CROSS_ORIGIN.indexOf(origin) < 0) return;
 
   const isHTML =
     req.mode === "navigate" ||

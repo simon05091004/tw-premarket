@@ -1,0 +1,17 @@
+{
+  "name": "台北等公車",
+  "short_name": "等公車",
+  "description": "查雙北公車路線與即時到站時間，選定站牌可一鍵分享到 LINE。資料來自交通部 TDX。",
+  "start_url": "./bus.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FCFCFA",
+  "theme_color": "#15171C",
+  "lang": "zh-Hant",
+  "icons": [
+    { "src": "bus-icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "bus-icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "bus-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
