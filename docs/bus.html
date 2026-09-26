@@ -1,0 +1,1173 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>台北等公車 · 到站時間查詢</title>
+<meta name="description" content="查台北市、新北市公車路線與即時到站時間，選好站牌一鍵分享到 LINE。資料來自交通部 TDX 運輸資料流通服務平臺。">
+
+<!-- LINE 聊天室的連結預覽讀的是這幾個 og 標籤。LINE 的爬蟲不跑 JavaScript，
+     所以這裡只能是固定文案；「哪一條路線、哪一站」是寫在分享出去的文字裡，
+     不是寫在卡片上。og:url / og:image 換部署位置時要跟著改成新的絕對網址。 -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="台北等公車">
+<meta property="og:title" content="台北等公車 · 到站時間查詢">
+<meta property="og:description" content="輸入路線號碼就看得到每一站還要幾分鐘。選定站牌後可直接分享到 LINE，對方點開就是同一個站牌。">
+<meta property="og:url" content="https://simon05091004.github.io/tw-premarket/bus.html">
+<meta property="og:image" content="https://simon05091004.github.io/tw-premarket/bus-og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+
+<link rel="manifest" href="bus-manifest.json">
+<meta name="theme-color" content="#15171C">
+<link rel="icon" href="bus-icon-192.png">
+<link rel="apple-touch-icon" href="bus-icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="等公車">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://tdx.transportdata.tw">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --paper:#FCFCFA; --card:#F4F3EE; --ink:#15171C; --muted:#71757E; --rule:#E4E3DE;
+    --soon:#C8322B;      /* 進站中／將到站：與報告頁的「漲」同色，台股慣例的紅 */
+    --ok:#0E7A52;        /* 還有時間 */
+    --line:#06C755;      /* LINE 品牌綠，只用在分享鈕 */
+    --accent:#1C5BA8;
+    --mono:"IBM Plex Mono","Noto Sans TC",monospace;
+    --sans:"Noto Sans TC",system-ui,sans-serif;
+    --safe-b:env(safe-area-inset-bottom,0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:#15171C; --card:#1E2128; --ink:#ECEBE6; --muted:#8B8F99; --rule:#2C3039;
+      --soon:#FF6B61; --ok:#44C08A; --accent:#6FA8F5;
+    }
+  }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { margin:0; background:var(--paper); color:var(--ink); }
+  body {
+    font-family:var(--sans); line-height:1.6; -webkit-text-size-adjust:100%;
+    padding-bottom:calc(5.5rem + var(--safe-b));
+  }
+  .wrap { max-width:44rem; margin:0 auto; padding:0 1rem; }
+  button, input, select { font:inherit; color:inherit; }
+  button { cursor:pointer; background:none; border:none; padding:0; }
+  [hidden] { display:none !important; }
+
+  /* ---- 報頭與分頁 ---- */
+  header { border-bottom:2px solid var(--ink); padding:1.25rem 0 .7rem; }
+  .eyebrow {
+    font-family:var(--mono); font-size:.68rem; letter-spacing:.18em;
+    text-transform:uppercase; color:var(--muted);
+  }
+  h1 { font-size:1.45rem; font-weight:700; letter-spacing:-.01em; margin:.2rem 0 .15rem; }
+  .sub { font-family:var(--mono); font-size:.72rem; color:var(--muted); }
+  .sub a { color:var(--muted); }
+
+  nav {
+    position:sticky; top:0; z-index:20; background:var(--paper);
+    border-bottom:1px solid var(--rule); display:flex; gap:.4rem;
+    padding:.5rem 0; margin-bottom:1rem;
+  }
+  nav button {
+    flex:1; padding:.45rem .3rem; border:1px solid var(--rule); border-radius:999px;
+    font-size:.82rem; color:var(--muted); background:var(--paper);
+  }
+  nav button[aria-selected="true"] { background:var(--ink); color:var(--paper); border-color:var(--ink); }
+
+  /* ---- 搜尋 ---- */
+  .searchbar { display:flex; gap:.5rem; }
+  .searchbar input {
+    flex:1; padding:.7rem .85rem; border:1px solid var(--rule); border-radius:.6rem;
+    background:var(--card); font-family:var(--mono); font-size:1rem; min-width:0;
+  }
+  .searchbar input:focus { outline:2px solid var(--accent); outline-offset:-1px; }
+  .searchbar select {
+    padding:.7rem .5rem; border:1px solid var(--rule); border-radius:.6rem;
+    background:var(--card); font-size:.85rem;
+  }
+  .hint { font-size:.76rem; color:var(--muted); margin:.6rem 0 0; }
+
+  ul.list { list-style:none; margin:1rem 0 0; padding:0; }
+  ul.list > li { border-bottom:1px solid var(--rule); }
+  .row {
+    display:flex; align-items:center; gap:.75rem; width:100%;
+    padding:.75rem .25rem; text-align:left;
+  }
+  .row:active { background:var(--card); }
+  .rno {
+    font-family:var(--mono); font-weight:600; font-size:1.02rem;
+    min-width:3.6rem; letter-spacing:-.02em;
+  }
+  .rpath { flex:1; font-size:.82rem; color:var(--muted); min-width:0; }
+  .rcity {
+    font-family:var(--mono); font-size:.62rem; letter-spacing:.06em; color:var(--muted);
+    border:1px solid var(--rule); border-radius:.25rem; padding:.05rem .3rem; white-space:nowrap;
+  }
+
+  /* ---- 路線檢視 ---- */
+  .rhead { display:flex; align-items:baseline; gap:.6rem; flex-wrap:wrap; }
+  .rhead .big { font-family:var(--mono); font-size:1.9rem; font-weight:600; letter-spacing:-.02em; }
+  .dirs { display:flex; gap:.4rem; margin:.9rem 0 .2rem; }
+  .dirs button {
+    flex:1; padding:.5rem; border:1px solid var(--rule); border-radius:.5rem;
+    font-size:.84rem; color:var(--muted); background:var(--paper);
+  }
+  .dirs button[aria-selected="true"] { background:var(--ink); color:var(--paper); border-color:var(--ink); }
+
+  .meta {
+    display:flex; justify-content:space-between; align-items:center; gap:.5rem;
+    font-family:var(--mono); font-size:.7rem; color:var(--muted);
+    padding:.55rem 0; border-bottom:1px solid var(--rule);
+  }
+  .meta button { font-family:var(--mono); font-size:.7rem; color:var(--accent); }
+
+  .stop {
+    display:flex; align-items:center; gap:.7rem; width:100%;
+    padding:.5rem .4rem; text-align:left; position:relative;
+  }
+  .stop:active { background:var(--card); }
+  .stop[aria-current="true"] { background:var(--card); border-radius:.5rem; }
+  .tl { position:relative; width:1.1rem; flex:none; align-self:stretch; }
+  .tl::before {
+    content:""; position:absolute; left:50%; top:0; bottom:0; width:2px;
+    margin-left:-1px; background:var(--rule);
+  }
+  li:first-child .tl::before { top:50%; }
+  li:last-child  .tl::before { bottom:50%; }
+  .dot {
+    position:absolute; left:50%; top:50%; width:.5rem; height:.5rem; margin:-.25rem 0 0 -.25rem;
+    border-radius:50%; background:var(--rule);
+  }
+  .stop[data-soon="1"] .dot { background:var(--soon); box-shadow:0 0 0 .18rem color-mix(in srgb, var(--soon) 22%, transparent); }
+  .stop[aria-current="true"] .dot { background:var(--ink); }
+  .sname { flex:1; font-size:.94rem; min-width:0; }
+  .sseq { font-family:var(--mono); font-size:.66rem; color:var(--muted); }
+  .eta {
+    font-family:var(--mono); font-size:.86rem; font-weight:600; text-align:right;
+    min-width:4.6rem; flex:none; color:var(--muted);
+  }
+  .eta.soon { color:var(--soon); }
+  .eta.ok { color:var(--ok); }
+  .eta small { display:block; font-weight:400; font-size:.62rem; color:var(--muted); }
+  .star { flex:none; width:2rem; text-align:center; font-size:1rem; color:var(--rule); }
+  .star[data-on="1"] { color:var(--accent); }
+
+  /* ---- 分享列 ---- */
+  .sharebar {
+    position:fixed; left:0; right:0; bottom:0; z-index:30;
+    background:var(--paper); border-top:1px solid var(--rule);
+    padding:.65rem 1rem calc(.65rem + var(--safe-b));
+  }
+  .sharebar .inner { max-width:44rem; margin:0 auto; display:flex; gap:.5rem; align-items:center; }
+  .sharebar .who { flex:1; font-size:.74rem; color:var(--muted); min-width:0; }
+  .sharebar .who b { display:block; color:var(--ink); font-size:.86rem; font-weight:500; }
+  .btn {
+    padding:.62rem 1rem; border-radius:.55rem; font-size:.86rem; font-weight:500;
+    border:1px solid var(--rule); white-space:nowrap;
+  }
+  .btn.line { background:var(--line); color:#032D14; border-color:var(--line); font-weight:700; }
+  .btn.ghost { color:var(--muted); }
+  .btn:disabled { opacity:.45; }
+
+  /* ---- 設定 ---- */
+  .field { margin:1rem 0; }
+  .field label { display:block; font-size:.82rem; margin-bottom:.3rem; }
+  .field input, .field select {
+    width:100%; padding:.6rem .7rem; border:1px solid var(--rule); border-radius:.5rem;
+    background:var(--card); font-family:var(--mono); font-size:.88rem;
+  }
+  .note {
+    background:var(--card); border-left:3px solid var(--rule); border-radius:0 .4rem .4rem 0;
+    padding:.7rem .85rem; font-size:.8rem; color:var(--muted); margin:1rem 0;
+  }
+  .note b { color:var(--ink); font-weight:500; }
+  .note code {
+    font-family:var(--mono); font-size:.92em;
+    background:color-mix(in srgb, var(--ink) 8%, transparent); padding:.05em .3em; border-radius:.2rem;
+  }
+  .note a { color:var(--accent); }
+
+  .banner {
+    border:1px solid var(--rule); border-radius:.5rem; padding:.7rem .85rem;
+    font-size:.82rem; margin:1rem 0; display:flex; gap:.6rem; align-items:flex-start;
+  }
+  .banner.warn { border-color:var(--soon); color:var(--soon); }
+  .banner button { text-decoration:underline; font-size:.82rem; white-space:nowrap; }
+  .empty { text-align:center; color:var(--muted); font-size:.85rem; padding:2.5rem 1rem; }
+  .spin { display:inline-block; animation:sp 1s linear infinite; }
+  @keyframes sp { to { transform:rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spin { animation:none; } }
+  footer {
+    border-top:1px solid var(--rule); margin-top:2rem; padding:1rem 0 0;
+    font-family:var(--mono); font-size:.68rem; color:var(--muted); line-height:1.9;
+  }
+  footer a { color:var(--muted); }
+  .toast {
+    position:fixed; left:50%; bottom:calc(5.5rem + var(--safe-b)); transform:translateX(-50%);
+    background:var(--ink); color:var(--paper); padding:.5rem .9rem; border-radius:.5rem;
+    font-size:.82rem; z-index:40; opacity:0; pointer-events:none; transition:opacity .2s;
+  }
+  .toast[data-on="1"] { opacity:1; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Taipei Bus Arrivals</div>
+    <h1>等公車</h1>
+    <div class="sub" id="srcline">資料來源 TDX 運輸資料流通服務平臺</div>
+  </header>
+
+  <nav role="tablist">
+    <button role="tab" id="tab-search" aria-selected="true" aria-controls="v-search">搜尋路線</button>
+    <button role="tab" id="tab-fav"    aria-selected="false" aria-controls="v-fav">我的站牌</button>
+    <button role="tab" id="tab-set"    aria-selected="false" aria-controls="v-set">設定</button>
+  </nav>
+
+  <div id="banner"></div>
+
+  <!-- ================= 搜尋 ================= -->
+  <section id="v-search" role="tabpanel" aria-labelledby="tab-search">
+    <div class="searchbar">
+      <input id="q" type="search" inputmode="search" enterkeyhint="search"
+             placeholder="路線號碼，例如 299、藍 7、棕 3" autocomplete="off" aria-label="搜尋路線">
+      <select id="city" aria-label="縣市">
+        <option value="Taipei">北市</option>
+        <option value="NewTaipei">新北</option>
+        <option value="both" selected>雙北</option>
+        <option value="Keelung">基隆</option>
+        <option value="Taoyuan">桃園</option>
+      </select>
+    </div>
+    <p class="hint" id="qhint">輸入路線號碼開始查。第一次查某個縣市要下載一次路線表，之後就走本機快取。</p>
+    <ul class="list" id="results"></ul>
+  </section>
+
+  <!-- ================= 路線 ================= -->
+  <section id="v-route" role="tabpanel" hidden>
+    <button class="btn ghost" id="back" style="margin:-.2rem 0 1rem; padding:.3rem 0; border:none">← 回搜尋</button>
+    <div class="rhead">
+      <span class="big" id="r-no">—</span>
+      <span class="rcity" id="r-city"></span>
+    </div>
+    <div class="sub" id="r-path"></div>
+    <div class="dirs" id="r-dirs"></div>
+    <div class="meta">
+      <span id="r-updated">—</span>
+      <button id="r-refresh" type="button">重新整理</button>
+    </div>
+    <ul class="list" id="stops"></ul>
+  </section>
+
+  <!-- ================= 我的站牌 ================= -->
+  <section id="v-fav" role="tabpanel" aria-labelledby="tab-fav" hidden>
+    <div class="meta">
+      <span id="f-updated">—</span>
+      <button id="f-refresh" type="button">重新整理</button>
+    </div>
+    <ul class="list" id="favs"></ul>
+    <div class="empty" id="fav-empty">
+      還沒有收藏的站牌。<br>在路線頁點右邊的 ☆ 就會加進來。
+    </div>
+    <div id="fav-share" hidden style="margin-top:1.2rem">
+      <button class="btn line" id="share-favs" style="width:100%">把整組站牌分享到 LINE</button>
+      <p class="hint">對方點開連結會直接看到同一組站牌的即時到站時間（對方也需要自備 TDX 金鑰）。</p>
+    </div>
+  </section>
+
+  <!-- ================= 設定 ================= -->
+  <section id="v-set" role="tabpanel" aria-labelledby="tab-set" hidden>
+    <div class="note">
+      <b>為什麼要自己申請金鑰？</b><br>
+      這是一頁放在 GitHub Pages 的靜態網頁，沒有後端可以替你保管密鑰。
+      金鑰只存在<b>這支瀏覽器的 localStorage</b>，不會送到 GitHub 或任何第三方，
+      每次查詢都是你的瀏覽器直接打 TDX。
+      去 <a href="https://tdx.transportdata.tw/register" target="_blank" rel="noopener noreferrer">TDX 會員註冊</a>
+      申請一組免費金鑰（<code>Client Id</code> 與 <code>Client Secret</code>），
+      免費額度是每天 5 萬次、每秒 50 次，個人用綽綽有餘。
+    </div>
+
+    <div class="field">
+      <label for="cid">TDX Client Id</label>
+      <input id="cid" type="text" autocomplete="off" spellcheck="false" placeholder="xxxx-bus-12345678">
+    </div>
+    <div class="field">
+      <label for="csec">TDX Client Secret</label>
+      <input id="csec" type="password" autocomplete="off" spellcheck="false" placeholder="********-****-****-****-************">
+    </div>
+    <div class="field">
+      <label for="ivl">自動更新間隔</label>
+      <select id="ivl">
+        <option value="0">不自動更新</option>
+        <option value="15">15 秒</option>
+        <option value="20" selected>20 秒（TDX 原始資料的更新頻率）</option>
+        <option value="30">30 秒</option>
+        <option value="60">60 秒</option>
+      </select>
+    </div>
+    <div style="display:flex; gap:.5rem; flex-wrap:wrap">
+      <button class="btn" id="save-creds">儲存</button>
+      <button class="btn ghost" id="test-creds">測試連線</button>
+      <button class="btn ghost" id="clear-cache">清除路線快取</button>
+      <button class="btn ghost" id="clear-creds">刪除金鑰</button>
+    </div>
+    <p class="hint" id="set-msg"></p>
+
+    <div class="note">
+      <b>沒有金鑰也可以先看看。</b>
+      打開<button id="demo-toggle" style="text-decoration:underline">示範模式</button>會用一組固定的假資料
+      把畫面跑一遍，分享功能照常可用，但時間是假的。
+    </div>
+  </section>
+
+  <footer>
+    到站時間是 TDX 依據 GPS 回報推估的結果，塞車與號誌都會讓它跳動；<br>
+    路線與站序資料同樣來自 TDX，站牌實際位置以現場牌面為準。<br>
+    <a href="index.html">← 台股每日報告</a>
+  </footer>
+</div>
+
+<div class="sharebar" id="sharebar" hidden>
+  <div class="inner">
+    <div class="who"><b id="sh-title">—</b><span id="sh-sub">—</span></div>
+    <button class="btn line" id="share-line">分享到 LINE</button>
+    <button class="btn ghost" id="share-copy">複製</button>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script>
+"use strict";
+(function () {
+
+/* ========== 小工具 ========== */
+const $ = (id) => document.getElementById(id);
+const enc = encodeURIComponent;
+
+function el(tag, attrs, kids) {
+  const n = document.createElement(tag);
+  for (const k in (attrs || {})) {
+    const v = attrs[k];
+    if (v == null || v === false) continue;
+    if (k === "class") n.className = v;
+    else if (k === "text") n.textContent = v;       // 一律走 textContent，站名不進 innerHTML
+    else if (k.slice(0, 2) === "on") n.addEventListener(k.slice(2), v);
+    else n.setAttribute(k, v === true ? "" : String(v));
+  }
+  for (const c of (kids || [])) if (c) n.appendChild(c);
+  return n;
+}
+
+let toastTimer = 0;
+function toast(msg) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.dataset.on = "1";
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.dataset.on = "0"; }, 2200);
+}
+
+/* 無痕視窗、擋第三方儲存的情況下 localStorage 會直接丟例外，所以全部包起來 */
+function safeStore(backing) {
+  return {
+    get(k) { try { const v = backing.getItem(k); return v ? JSON.parse(v) : null; } catch (e) { return null; } },
+    set(k, v) { try { backing.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } },
+    del(k) { try { backing.removeItem(k); } catch (e) {} },
+    keys() { try { return Object.keys(backing); } catch (e) { return []; } },
+  };
+}
+const store = safeStore(window.localStorage);
+const session = safeStore(window.sessionStorage);
+
+const hhmm = (ms) => new Date(ms).toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit", hour12: false });
+
+class AppError extends Error {
+  constructor(code, msg) { super(msg); this.code = code; }
+}
+
+/* ========== 狀態 ========== */
+const CITY_LABEL = { Taipei: "北市", NewTaipei: "新北", Keelung: "基隆", Taoyuan: "桃園" };
+const K = { CREDS: "tdx.creds", FAVS: "bus.favs", IVL: "bus.interval", CITY: "bus.city", DEMO: "bus.demo" };
+
+const state = {
+  tab: "search",
+  route: null,      // { city, name, dirs:[{dir,dest,stops:[{uid,name,seq}]}] }
+  dir: 0,
+  stop: null,       // 站名
+  eta: new Map(),   // "dir|stopUID" -> { sec, status, next, more }
+  updatedAt: 0,
+  favAt: 0,
+  group: null,      // ?g= 帶進來的站牌組（不動使用者自己的收藏）
+  timer: 0,
+  loading: false,
+};
+
+const demoOn = () => store.get(K.DEMO) === true;
+const creds = () => store.get(K.CREDS) || { id: "", secret: "" };
+const favs = () => store.get(K.FAVS) || [];
+const favKey = (f) => [f.city, f.route, f.dir, f.stop].join("|");
+const interval = () => { const v = store.get(K.IVL); return v == null ? 20 : v; };
+
+/* ========== TDX ========== */
+const TDX_AUTH = "https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token";
+const TDX_API = "https://tdx.transportdata.tw/api/basic";
+
+async function token() {
+  const c = session.get("tdx.token");
+  if (c && c.exp > Date.now() + 60000) return c.v;
+  const { id, secret } = creds();
+  if (!id || !secret) throw new AppError("NO_CREDS", "還沒設定 TDX 金鑰");
+
+  let r;
+  try {
+    r = await fetch(TDX_AUTH, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ grant_type: "client_credentials", client_id: id, client_secret: secret }),
+    });
+  } catch (e) {
+    throw new AppError("NET", "連不上 TDX（可能是網路或瀏覽器擋下了跨網域請求）");
+  }
+  if (r.status === 401 || r.status === 400) throw new AppError("BAD_CREDS", "金鑰不正確，請回設定頁確認 Client Id 與 Secret");
+  if (!r.ok) throw new AppError("AUTH", "TDX 認證失敗（HTTP " + r.status + "）");
+  const j = await r.json();
+  session.set("tdx.token", { v: j.access_token, exp: Date.now() + (j.expires_in || 86400) * 1000 });
+  return j.access_token;
+}
+
+async function tdxGet(path, params, retried) {
+  const t = await token();
+  const u = new URL(TDX_API + path);
+  u.searchParams.set("$format", "JSON");
+  for (const k in (params || {})) u.searchParams.set(k, params[k]);
+
+  let r;
+  try {
+    r = await fetch(u.toString(), { headers: { authorization: "Bearer " + t } });
+  } catch (e) {
+    throw new AppError("NET", "連不上 TDX（網路不通，或瀏覽器擋下跨網域請求）");
+  }
+  if (r.status === 401 && !retried) {       // token 過期：清掉再試一次
+    session.del("tdx.token");
+    return tdxGet(path, params, true);
+  }
+  if (r.status === 429) throw new AppError("RATE", "查詢太頻繁，被 TDX 限流了，等一下再試");
+  if (!r.ok) throw new AppError("HTTP", "TDX 回應 HTTP " + r.status);
+  return r.json();
+}
+
+/* 路線表：一個縣市幾百到一千多條，但只留四個欄位，壓下來不到 100KB，快取七天 */
+async function fetchRoutes(city) {
+  const key = "routes:" + city;
+  const c = store.get(key);
+  if (c && Date.now() - c.at < 7 * 864e5) return c.v;
+
+  let raw;
+  const select = "RouteUID,RouteName,DepartureStopNameZh,DestinationStopNameZh";
+  try {
+    raw = await tdxGet("/v2/Bus/Route/City/" + city, { "$select": select });
+  } catch (e) {
+    if (e.code !== "HTTP") throw e;
+    raw = await tdxGet("/v2/Bus/Route/City/" + city);   // $select 被拒就整包拿
+  }
+  const v = raw
+    .map((x) => ({
+      n: (x.RouteName && (x.RouteName.Zh_tw || x.RouteName.En)) || "",
+      a: x.DepartureStopNameZh || "",
+      b: x.DestinationStopNameZh || "",
+    }))
+    .filter((x) => x.n);
+  store.set(key, { at: Date.now(), v });
+  return v;
+}
+
+/* StopOfRoute 的路線名是「包含」比對，查 20 會連 205、206 一起回來，必須自己收斂 */
+async function fetchStops(city, name) {
+  const key = "stops:" + city + ":" + name;
+  const c = store.get(key);
+  if (c && Date.now() - c.at < 7 * 864e5) return c.v;
+
+  const raw = await tdxGet("/v2/Bus/StopOfRoute/City/" + city + "/" + enc(name));
+  const exact = raw.filter((x) => x.RouteName && x.RouteName.Zh_tw === name);
+  if (!exact.length) throw new AppError("NOT_FOUND", "在" + (CITY_LABEL[city] || city) + "找不到「" + name + "」這條路線");
+
+  const byDir = new Map();
+  for (const x of exact) {
+    const d = x.Direction == null ? 0 : x.Direction;
+    const stops = (x.Stops || [])
+      .slice()
+      .sort((p, q) => (p.StopSequence || 0) - (q.StopSequence || 0))
+      .map((s) => ({
+        uid: s.StopUID || s.StopID,
+        name: (s.StopName && s.StopName.Zh_tw) || "",
+        seq: s.StopSequence,
+      }));
+    // 同一個方向可能有多筆（區間車、繞駛版本）；站數最多的那筆當主線
+    const prev = byDir.get(d);
+    if (!prev || stops.length > prev.stops.length) {
+      byDir.set(d, { dir: d, dest: x.DestinationStopNameZh || "", stops });
+    }
+  }
+  const v = Array.from(byDir.values()).sort((p, q) => p.dir - q.dir);
+  store.set(key, { at: Date.now(), v });
+  pruneStopCache();
+  return v;
+}
+
+/* 站序快取只留最近 40 條路線，不然 localStorage 5MB 遲早撐爆 */
+function pruneStopCache() {
+  const rows = store.keys()
+    .filter((k) => k.indexOf("stops:") === 0)
+    .map((k) => ({ k, at: (store.get(k) || {}).at || 0 }))
+    .sort((a, b) => b.at - a.at);
+  for (const r of rows.slice(40)) store.del(r.k);
+}
+
+async function fetchEta(city, name) {
+  const raw = await tdxGet("/v2/Bus/EstimatedTimeOfArrival/City/" + city + "/" + enc(name));
+  const m = new Map();
+  for (const x of raw) {
+    if (!x.RouteName || x.RouteName.Zh_tw !== name) continue;    // 同樣要收斂
+    const uid = x.StopUID || x.StopID;
+    const d = x.Direction == null ? 0 : x.Direction;
+    const k = d + "|" + uid;
+    let rec = m.get(k);
+    if (!rec) { rec = { sec: null, status: 0, next: null, more: [] }; m.set(k, rec); }
+    // 同一站可能有多筆（不同子路線／不同車），秒數收集起來，最小的當「到站」
+    if (typeof x.EstimateTime === "number") rec.more.push(x.EstimateTime);
+    if (x.NextBusTime && !rec.next) rec.next = x.NextBusTime;
+    if (rec.more.length === 0 && typeof x.StopStatus === "number") rec.status = x.StopStatus;
+  }
+  for (const rec of m.values()) {
+    if (rec.more.length) {
+      rec.more.sort((a, b) => a - b);
+      rec.sec = rec.more[0];
+      rec.status = 0;
+    }
+  }
+  return m;
+}
+
+/* ========== 示範資料 ========== */
+const DEMO_ROUTE = {
+  city: "Taipei",
+  name: "299",
+  dirs: [
+    { dir: 0, dest: "捷運松山機場站", stops: ["秀山國小", "中和分局", "積穗國中", "捷運景安站", "古亭國小",
+      "和平復興路口", "捷運忠孝復興站", "捷運南京復興站", "三民路口", "捷運松山機場站"] },
+    { dir: 1, dest: "秀山國小", stops: ["捷運松山機場站", "三民路口", "捷運南京復興站", "捷運忠孝復興站",
+      "和平復興路口", "古亭國小", "捷運景安站", "積穗國中", "中和分局", "秀山國小"] },
+  ],
+};
+
+function demoRoute() {
+  return {
+    city: DEMO_ROUTE.city,
+    name: DEMO_ROUTE.name,
+    dirs: DEMO_ROUTE.dirs.map((d) => ({
+      dir: d.dir, dest: d.dest,
+      stops: d.stops.map((n, i) => ({ uid: "DEMO-" + d.dir + "-" + i, name: n, seq: i + 1 })),
+    })),
+  };
+}
+
+/* 假一台車在路線上往前跑：越後面的站等越久，已經過站的就跳成下一班。
+   真實資料長得就是這個形狀，隨機亂數反而會讓示範畫面看起來像壞掉。 */
+function demoEta(route) {
+  const m = new Map();
+  const GAP = 105;                                    // 站與站之間約 105 秒
+  for (const d of route.dirs) {
+    const lead = (Math.floor(Date.now() / 1000) + d.dir * 300) % (d.stops.length * GAP);
+    d.stops.forEach((s, i) => {
+      let sec = i * GAP - lead;
+      if (sec < 0) sec += d.stops.length * GAP + 420;  // 過站了，等下一班
+      const rec = { sec, status: 0, next: null, more: [sec, sec + 420] };
+      if (i === d.stops.length - 1 && d.dir === 1) { rec.sec = null; rec.status = 3; rec.more = []; }
+      m.set(d.dir + "|" + s.uid, rec);
+    });
+  }
+  return m;
+}
+
+/* ========== 到站文字 ========== */
+function etaText(rec) {
+  if (!rec) return { t: "—", cls: "", soon: false };
+  if (rec.sec == null) {
+    const byStatus = { 1: "尚未發車", 2: "不停靠", 3: "末班已過", 4: "今日未營運" };
+    return { t: byStatus[rec.status] || "—", cls: "", soon: false };
+  }
+  const s = rec.sec;
+  if (s <= 30) return { t: "進站中", cls: "soon", soon: true };
+  if (s <= 120) return { t: "將到站", cls: "soon", soon: true };
+  const m = Math.floor(s / 60);
+  if (m >= 60) return { t: Math.floor(m / 60) + " 時 " + (m % 60) + " 分", cls: "", soon: false };
+  return { t: m + " 分", cls: m <= 10 ? "ok" : "", soon: false };
+}
+
+function nextText(rec) {
+  if (!rec || !rec.more || rec.more.length < 2) return "";
+  const s = rec.more[1];
+  if (s == null || s - (rec.more[0] || 0) < 60) return "";
+  return Math.max(1, Math.floor(s / 60)) + " 分";
+}
+
+/* ========== 分享 ========== */
+function shareUrlFor(sel) {
+  const u = new URL(location.href);
+  u.search = ""; u.hash = "";
+  u.searchParams.set("c", sel.city);
+  u.searchParams.set("r", sel.route);
+  u.searchParams.set("d", sel.dir);
+  if (sel.stop) u.searchParams.set("s", sel.stop);
+  return u.toString();
+}
+
+function shareUrlForGroup(list) {
+  const u = new URL(location.href);
+  u.search = ""; u.hash = "";
+  u.searchParams.set("g", list.map((f) => [f.city, f.route, f.dir, f.stop].join(":")).join(","));
+  return u.toString();
+}
+
+function shareTextForStop(sel, rec) {
+  const lines = ["🚌 " + sel.route + " 往 " + (sel.dest || "—")];
+  lines.push(sel.stop + "　" + etaText(rec).t);
+  const nx = nextText(rec);
+  if (nx) lines.push("下一班　" + nx);
+  lines.push(hhmm(Date.now()) + " 查詢" + (demoOn() ? "（示範資料）" : ""));
+  return lines.join("\n");
+}
+
+/* LINE 有三條路可以走，差別在使用者當下在哪裡：
+   1. 手機原生分享面板 —— 最順，而且使用者可以選聊天室
+   2. line.me/R/msg/text —— 手機上直接開 LINE 挑聊天室，文字整段帶過去
+   3. social-plugins lineit —— 桌機唯一可用的，但它只吃 url + text
+   另外 LINE 內建瀏覽器裡 navigator.share 會失效，要特別繞開。
+   navigator.share 必須在使用者手勢的同一個 tick 呼叫，所以這裡不能有 await。 */
+function shareToLine(text, url) {
+  const ua = navigator.userAgent || "";
+  const inLineApp = /\bLine\//i.test(ua);
+  const mobile = window.matchMedia("(pointer: coarse)").matches;
+
+  const fallback = () => {
+    const target = (mobile && !inLineApp)
+      ? "https://line.me/R/msg/text/?" + enc(text + "\n" + url)
+      : "https://social-plugins.line.me/lineit/share?url=" + enc(url) + "&text=" + enc(text);
+    window.open(target, "_blank", "noopener");
+  };
+
+  if (!inLineApp && navigator.share) {
+    try {
+      navigator.share({ title: "台北等公車", text: text, url: url })
+        .catch((e) => { if (e && e.name !== "AbortError") fallback(); });
+      return;
+    } catch (e) { /* 落到 fallback */ }
+  }
+  fallback();
+}
+
+function copyText(s) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(s).then(() => toast("已複製"), () => toast("複製失敗，請手動選取"));
+    return;
+  }
+  const ta = el("textarea", { value: s, style: "position:fixed;opacity:0" });
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand("copy"); toast("已複製"); } catch (e) { toast("複製失敗"); }
+  ta.remove();
+}
+
+function currentSelection() {
+  if (!state.route) return null;
+  const d = state.route.dirs.find((x) => x.dir === state.dir) || state.route.dirs[0];
+  if (!d) return null;
+  return { city: state.route.city, route: state.route.name, dir: d.dir, dest: d.dest, stop: state.stop || "" };
+}
+
+function recFor(sel) {
+  const d = state.route.dirs.find((x) => x.dir === sel.dir);
+  const s = d && d.stops.find((x) => x.name === sel.stop);
+  return s ? state.eta.get(sel.dir + "|" + s.uid) : null;
+}
+
+/* ========== 畫面 ========== */
+function setBanner(node) {
+  const b = $("banner");
+  b.textContent = "";
+  if (node) b.appendChild(node);
+}
+
+function showError(e) {
+  const msg = e instanceof AppError ? e.message : "發生未預期的錯誤：" + (e && e.message ? e.message : e);
+  const kids = [el("span", { text: msg, style: "flex:1" })];
+  if (e instanceof AppError && (e.code === "NO_CREDS" || e.code === "BAD_CREDS")) {
+    kids.push(el("button", { text: "去設定", onclick: () => switchTab("set") }));
+  }
+  setBanner(el("div", { class: "banner warn" }, kids));
+}
+
+function switchTab(name) {
+  state.tab = name;
+  for (const t of ["search", "fav", "set"]) {
+    $("tab-" + t).setAttribute("aria-selected", String(t === name));
+    $("v-" + t).hidden = t !== name;
+  }
+  $("v-route").hidden = true;
+  $("sharebar").hidden = true;
+  stopTimer();
+  if (name === "fav") { renderFavs(); startTimer(); }
+}
+
+function showRouteView() {
+  for (const t of ["search", "fav", "set"]) $("v-" + t).hidden = true;
+  $("v-route").hidden = false;
+  window.scrollTo(0, 0);
+}
+
+/* ---- 搜尋 ---- */
+let searchSeq = 0;
+async function runSearch() {
+  const q = $("q").value.trim();
+  const mine = ++searchSeq;
+  const box = $("results");
+  if (!q) { box.textContent = ""; setBanner(null); return; }
+
+  const pick = $("city").value;
+  const cities = pick === "both" ? ["Taipei", "NewTaipei"] : [pick];
+  store.set(K.CITY, pick);
+
+  if (demoOn()) {
+    setBanner(null);
+    renderResults([{ city: "Taipei", n: "299", a: "秀山國小", b: "捷運松山機場站" }]
+      .filter((r) => r.n.indexOf(q) >= 0));
+    $("qhint").textContent = "示範模式：只有 299 這一條，時間是假的。";
+    return;
+  }
+
+  box.textContent = "";
+  $("qhint").textContent = "查詢中…";
+  try {
+    const out = [];
+    for (const c of cities) {
+      const rows = await fetchRoutes(c);
+      if (mine !== searchSeq) return;                  // 使用者又打了字，這次結果作廢
+      for (const r of rows) if (r.n.indexOf(q) >= 0) out.push({ city: c, n: r.n, a: r.a, b: r.b });
+    }
+    // 完全相符的排前面，其餘照字典序；雙北同名路線只留一筆（同名通常是聯營）
+    out.sort((p, q2) => (p.n === q ? -1 : q2.n === q ? 1 : p.n.localeCompare(q2.n, "zh-Hant")));
+    const seen = new Set();
+    const uniq = out.filter((r) => (seen.has(r.n) ? false : (seen.add(r.n), true)));
+    setBanner(null);
+    renderResults(uniq.slice(0, 60));
+    $("qhint").textContent = uniq.length ? uniq.length + " 條相符" : "";
+  } catch (e) {
+    $("qhint").textContent = "";
+    showError(e);
+  }
+}
+
+function renderResults(rows) {
+  const box = $("results");
+  box.textContent = "";
+  if (!rows.length) {
+    box.appendChild(el("li", {}, [el("div", { class: "empty", text: "沒有相符的路線" })]));
+    return;
+  }
+  for (const r of rows) {
+    box.appendChild(el("li", {}, [
+      el("button", { class: "row", onclick: () => openRoute(r.city, r.n) }, [
+        el("span", { class: "rno", text: r.n }),
+        el("span", { class: "rpath", text: r.a && r.b ? r.a + " ↔ " + r.b : "" }),
+        el("span", { class: "rcity", text: CITY_LABEL[r.city] || r.city }),
+      ]),
+    ]));
+  }
+}
+
+/* ---- 路線 ---- */
+async function openRoute(city, name, dir, stop) {
+  showRouteView();
+  $("r-no").textContent = name;
+  $("r-city").textContent = CITY_LABEL[city] || city;
+  $("r-path").textContent = "";
+  $("stops").textContent = "";
+  $("r-updated").textContent = "載入中…";
+  setBanner(null);
+
+  try {
+    const dirs = demoOn() ? demoRoute().dirs : await fetchStops(city, name);
+    state.route = { city, name, dirs };
+    state.dir = dirs.some((d) => d.dir === dir) ? dir : (dirs[0] ? dirs[0].dir : 0);
+    state.stop = stop || null;
+    renderDirs();
+    renderStops();
+    await refreshEta();
+    startTimer();
+  } catch (e) {
+    $("r-updated").textContent = "";
+    showError(e);
+  }
+}
+
+function renderDirs() {
+  const box = $("r-dirs");
+  box.textContent = "";
+  const d0 = state.route.dirs;
+  $("r-path").textContent = d0.map((d) => "往 " + d.dest).join("　·　");
+  if (d0.length < 2) { box.hidden = true; return; }
+  box.hidden = false;
+  for (const d of d0) {
+    box.appendChild(el("button", {
+      text: "往 " + d.dest,
+      "aria-selected": String(d.dir === state.dir),
+      onclick: () => { state.dir = d.dir; state.stop = null; renderDirs(); renderStops(); syncUrl(); },
+    }));
+  }
+}
+
+function renderStops() {
+  const box = $("stops");
+  box.textContent = "";
+  const d = state.route.dirs.find((x) => x.dir === state.dir);
+  if (!d) return;
+  const saved = new Set(favs().map(favKey));
+
+  for (const s of d.stops) {
+    const rec = state.eta.get(state.dir + "|" + s.uid);
+    const t = etaText(rec);
+    const isSel = state.stop === s.name;
+    const fk = [state.route.city, state.route.name, state.dir, s.name].join("|");
+
+    const etaBox = el("span", { class: "eta " + t.cls }, [document.createTextNode(t.t)]);
+    const nx = nextText(rec);
+    if (nx) etaBox.appendChild(el("small", { text: "下一班 " + nx }));
+
+    box.appendChild(el("li", {}, [
+      el("div", { style: "display:flex; align-items:center" }, [
+        el("button", {
+          class: "stop", "aria-current": String(isSel), "data-soon": t.soon ? "1" : "0",
+          onclick: () => { state.stop = s.name; renderStops(); syncUrl(); },
+        }, [
+          el("span", { class: "tl" }, [el("span", { class: "dot" })]),
+          el("span", { class: "sname" }, [
+            document.createTextNode(s.name),
+            el("span", { class: "sseq", text: "　" + (s.seq || "") }),
+          ]),
+          etaBox,
+        ]),
+        el("button", {
+          class: "star", "data-on": saved.has(fk) ? "1" : "0",
+          "aria-label": "收藏 " + s.name, title: "加入我的站牌",
+          text: saved.has(fk) ? "★" : "☆",
+          onclick: () => toggleFav({ city: state.route.city, route: state.route.name, dir: state.dir, stop: s.name, dest: d.dest }),
+        }),
+      ]),
+    ]));
+  }
+  renderShareBar();
+}
+
+function renderShareBar() {
+  const sel = currentSelection();
+  const bar = $("sharebar");
+  if (!sel) { bar.hidden = true; return; }
+  bar.hidden = false;
+  if (sel.stop) {
+    const t = etaText(recFor(sel));
+    $("sh-title").textContent = sel.stop;
+    $("sh-sub").textContent = sel.route + " 往 " + sel.dest + " · " + t.t;
+  } else {
+    $("sh-title").textContent = sel.route + " 往 " + sel.dest;
+    $("sh-sub").textContent = "點一個站牌，分享出去就會停在那一站";
+  }
+}
+
+/* ---- 我的站牌 ---- */
+function toggleFav(f) {
+  const list = favs();
+  const k = favKey(f);
+  const i = list.findIndex((x) => favKey(x) === k);
+  if (i >= 0) { list.splice(i, 1); toast("已移除"); }
+  else { list.push(f); toast("已加入我的站牌"); }
+  if (!store.set(K.FAVS, list)) toast("這個瀏覽器不讓網頁存資料，收藏不會保留");
+  if (!$("v-route").hidden) renderStops();
+  else renderFavs();
+}
+
+function renderFavs() {
+  const showing = buildFavList();
+  if (showing.length) fillFavEta(showing);
+}
+
+/* 建清單與填時間分開：自動更新只需要改右邊那一欄，
+   整個列表重建會讓捲動位置跳掉，也會讓星號閃一下。 */
+function buildFavList() {
+  const showing = state.group || favs();
+  const box = $("favs");
+  box.textContent = "";
+  $("fav-empty").hidden = showing.length > 0 || !!state.group;
+  $("fav-share").hidden = !(favs().length && !state.group);
+
+  if (state.group) {
+    setBanner(el("div", { class: "banner" }, [
+      el("span", { text: "這是別人分享過來的 " + state.group.length + " 個站牌。", style: "flex:1" }),
+      el("button", {
+        text: "加入我的站牌", onclick: () => {
+          const mine = favs();
+          const have = new Set(mine.map(favKey));
+          let n = 0;
+          for (const f of state.group) if (!have.has(favKey(f))) { mine.push(f); n++; }
+          store.set(K.FAVS, mine);
+          state.group = null;
+          history.replaceState(null, "", location.pathname);
+          toast("加入了 " + n + " 個站牌");
+          renderFavs();
+        },
+      }),
+    ]));
+  }
+  if (!showing.length) { $("f-updated").textContent = ""; return showing; }
+
+  const saved = new Set(favs().map(favKey));
+  for (const f of showing) {
+    box.appendChild(el("li", { "data-fk": favKey(f) }, [
+      el("div", { style: "display:flex; align-items:center" }, [
+        el("button", {
+          class: "row", onclick: () => openRoute(f.city, f.route, f.dir, f.stop),
+        }, [
+          el("span", { class: "rno", text: f.route }),
+          el("span", { class: "rpath" }, [
+            document.createTextNode(f.stop),
+            el("span", { class: "sseq dest", text: f.dest ? "　往 " + f.dest : "" }),
+          ]),
+          el("span", { class: "eta", text: "…" }),
+        ]),
+        el("button", {
+          class: "star", "data-on": saved.has(favKey(f)) ? "1" : "0",
+          text: saved.has(favKey(f)) ? "★" : "☆",
+          "aria-label": "收藏 " + f.stop, onclick: () => toggleFav(f),
+        }),
+      ]),
+    ]));
+  }
+
+  return showing;
+}
+
+async function fillFavEta(showing) {
+  const box = $("favs");
+  if (!state.favAt) $("f-updated").textContent = "查詢中…";   // 之後的自動更新不要每 20 秒閃一次
+  try {
+    // 同一條路線只打一次 API，站牌再從結果裡挑
+    const groups = new Map();
+    for (const f of showing) {
+      const k = f.city + "|" + f.route;
+      if (!groups.has(k)) groups.set(k, { city: f.city, route: f.route, items: [] });
+      groups.get(k).items.push(f);
+    }
+    for (const g of groups.values()) {
+      const dirs = demoOn() ? demoRoute().dirs : await fetchStops(g.city, g.route);
+      const eta = demoOn() ? demoEta({ dirs }) : await fetchEta(g.city, g.route);
+      for (const f of g.items) {
+        const d = dirs.find((x) => x.dir === Number(f.dir));
+        const s = d && d.stops.find((x) => x.name === f.stop);
+        const rec = s ? eta.get(Number(f.dir) + "|" + s.uid) : null;
+        const t = etaText(rec);
+        const li = box.querySelector('li[data-fk="' + CSS.escape(favKey(f)) + '"]');
+        if (!li) continue;
+        const cell = li.querySelector(".eta");
+        if (cell) { cell.textContent = t.t; cell.className = "eta " + t.cls; }
+        // ?g= 分享連結沒帶終點站，這裡補回來；使用者按「加入我的站牌」時才存得到
+        if (!f.dest && d) {
+          f.dest = d.dest;
+          const dcell = li.querySelector(".dest");
+          if (dcell) dcell.textContent = "　往 " + d.dest;
+        }
+      }
+    }
+    state.favAt = Date.now();
+    $("f-updated").textContent = hhmm(state.favAt) + " 更新" + (demoOn() ? " · 示範資料" : "");
+  } catch (e) {
+    $("f-updated").textContent = "";
+    showError(e);
+    stopTimer();                       // 金鑰壞掉時不要每 20 秒再敲一次
+  }
+}
+
+/* ---- 更新到站時間 ---- */
+async function refreshEta() {
+  if (!state.route || state.loading) return;
+  state.loading = true;
+  try {
+    state.eta = demoOn() ? demoEta(state.route) : await fetchEta(state.route.city, state.route.name);
+    state.updatedAt = Date.now();
+    $("r-updated").textContent = hhmm(state.updatedAt) + " 更新" + (demoOn() ? " · 示範資料" : "");
+    renderStops();
+    setBanner(null);
+  } catch (e) {
+    $("r-updated").textContent = "";
+    showError(e);
+    stopTimer();
+  } finally {
+    state.loading = false;
+  }
+}
+
+function startTimer() {
+  stopTimer();
+  const s = interval();
+  if (!s) return;
+  state.timer = setInterval(() => {
+    if (document.hidden) return;              // 收在背景就不要一直打 API
+    if (!$("v-route").hidden) refreshEta();
+    else if (!$("v-fav").hidden) fillFavEta(state.group || favs());
+  }, s * 1000);
+}
+function stopTimer() { if (state.timer) { clearInterval(state.timer); state.timer = 0; } }
+
+/* ========== 網址狀態 ========== */
+function syncUrl() {
+  const sel = currentSelection();
+  if (!sel) return;
+  history.replaceState(null, "", shareUrlFor(sel));
+  renderShareBar();
+}
+
+function parseGroup(s) {
+  return s.split(",").map((chunk) => {
+    const p = chunk.split(":");
+    if (p.length < 4) return null;
+    return { city: p[0], route: p[1], dir: Number(p[2]) || 0, stop: p.slice(3).join(":"), dest: "" };
+  }).filter(Boolean);
+}
+
+function bootFromUrl() {
+  const p = new URLSearchParams(location.search);
+  if (p.get("g")) {
+    state.group = parseGroup(p.get("g"));
+    switchTab("fav");
+    return true;
+  }
+  const r = p.get("r");
+  if (r) {
+    const c = p.get("c") || "Taipei";
+    openRoute(c, r, Number(p.get("d")) || 0, p.get("s") || null);
+    return true;
+  }
+  return false;
+}
+
+/* ========== 設定 ========== */
+function loadSettings() {
+  const c = creds();
+  $("cid").value = c.id || "";
+  $("csec").value = c.secret || "";
+  $("ivl").value = String(interval());
+  const savedCity = store.get(K.CITY);
+  if (savedCity) $("city").value = savedCity;
+  $("demo-toggle").textContent = demoOn() ? "示範模式（目前開著，點此關閉）" : "示範模式";
+}
+
+function wireSettings() {
+  $("save-creds").onclick = () => {
+    const ok = store.set(K.CREDS, { id: $("cid").value.trim(), secret: $("csec").value.trim() });
+    store.set(K.IVL, Number($("ivl").value));
+    session.del("tdx.token");
+    $("set-msg").textContent = ok ? "已存在這支瀏覽器裡。" : "這個瀏覽器不允許網頁儲存資料，金鑰只在本次分頁有效。";
+    startTimer();
+  };
+  $("test-creds").onclick = async () => {
+    $("set-msg").textContent = "測試中…";
+    store.set(K.CREDS, { id: $("cid").value.trim(), secret: $("csec").value.trim() });
+    session.del("tdx.token");
+    try {
+      await tdxGet("/v2/Bus/Route/City/Taipei", { "$top": "1" });
+      $("set-msg").textContent = "連線正常，可以開始查了。";
+    } catch (e) {
+      $("set-msg").textContent = "✗ " + (e instanceof AppError ? e.message : e.message || e);
+    }
+  };
+  $("clear-cache").onclick = () => {
+    for (const k of store.keys()) if (k.indexOf("routes:") === 0 || k.indexOf("stops:") === 0) store.del(k);
+    $("set-msg").textContent = "路線與站序快取已清空，下次查詢會重新抓。";
+  };
+  $("clear-creds").onclick = () => {
+    store.del(K.CREDS); session.del("tdx.token");
+    $("cid").value = ""; $("csec").value = "";
+    $("set-msg").textContent = "金鑰已從這支瀏覽器刪除。";
+  };
+  $("ivl").onchange = () => { store.set(K.IVL, Number($("ivl").value)); startTimer(); };
+  $("demo-toggle").onclick = () => {
+    store.set(K.DEMO, !demoOn());
+    loadSettings();
+    toast(demoOn() ? "示範模式已開啟" : "示範模式已關閉");
+    setBanner(null);
+    if (demoOn()) { switchTab("search"); $("q").value = "299"; runSearch(); }
+  };
+}
+
+/* ========== 啟動 ========== */
+function init() {
+  for (const t of ["search", "fav", "set"]) $("tab-" + t).onclick = () => switchTab(t);
+  $("back").onclick = () => { history.replaceState(null, "", location.pathname); switchTab("search"); };
+  $("r-refresh").onclick = () => refreshEta();
+  $("f-refresh").onclick = () => renderFavs();
+
+  let deb = 0;
+  $("q").oninput = () => { clearTimeout(deb); deb = setTimeout(runSearch, 200); };
+  $("city").onchange = runSearch;
+
+  $("share-line").onclick = () => {
+    const sel = currentSelection();
+    if (!sel) return;
+    if (!sel.stop) { toast("先點一個站牌"); return; }
+    shareToLine(shareTextForStop(sel, recFor(sel)), shareUrlFor(sel));
+  };
+  $("share-copy").onclick = () => {
+    const sel = currentSelection();
+    if (!sel) return;
+    copyText(sel.stop ? shareTextForStop(sel, recFor(sel)) + "\n" + shareUrlFor(sel) : shareUrlFor(sel));
+  };
+  $("share-favs").onclick = () => {
+    const list = favs();
+    if (!list.length) return;
+    const text = "🚌 我的站牌（" + list.length + " 個）\n"
+      + list.slice(0, 6).map((f) => f.route + "　" + f.stop).join("\n")
+      + (list.length > 6 ? "\n…" : "");
+    shareToLine(text, shareUrlForGroup(list));
+  };
+
+  // 切回前景時立刻補一次，不要讓使用者盯著十幾秒前的舊時間
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden || !interval()) return;
+    if (!$("v-route").hidden) refreshEta();
+    else if (!$("v-fav").hidden) fillFavEta(state.group || favs());
+  });
+
+  loadSettings();
+  wireSettings();
+  if (!bootFromUrl()) {
+    switchTab("search");
+    if (!creds().id && !demoOn()) {
+      setBanner(el("div", { class: "banner" }, [
+        el("span", { text: "第一次用要先填一組免費的 TDX 金鑰。", style: "flex:1" }),
+        el("button", { text: "去設定", onclick: () => switchTab("set") }),
+      ]));
+    }
+  }
+}
+
+init();
+})();
+</script>
+</body>
+</html>
