@@ -16,6 +16,8 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+import io
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -47,6 +49,9 @@ def run_main(brief_result, tmpdir: Path) -> int:
         patch.object(main_mod, "DOCS", tmpdir),
         patch.object(main_mod, "DATA", tmpdir / "data"),
         patch.object(main_mod.fetch, "fetch_taiex_ohlc", return_value=[{"close": 1.0}]),
+        # 休市檢查另有專屬測試（TestHolidaySkip）；其餘案例一律當成有開盤，
+        # 免得每個測試都要連帶模擬證交所的指數回應。
+        patch.object(main_mod, "market_traded_on", return_value=True),
         patch("premarket.fetch_post.build_postmarket_payload", return_value=StubPayload()),
         patch.object(analyze, "generate_brief", **kwargs),
         patch.object(main_mod.render, "render", return_value="<html>x</html>"),
@@ -237,12 +242,130 @@ class TestTargetDate(unittest.TestCase):
         self.assertEqual(str(self._at("2026-08-11T00:30")), "2026-08-10")
 
     def test_postmarket_boundary_hour(self) -> None:
-        self.assertEqual(str(self._at("2026-08-11T04:59")), "2026-08-10")
-        self.assertEqual(str(self._at("2026-08-11T05:00")), "2026-08-11")
+        # 界線是場次時間 21:00：盤後排程只在 21:23／22:17 觸發，
+        # 早於 21 點執行的一定是被延遲的那一次，屬於前一天的場次。
+        self.assertEqual(str(self._at("2026-08-10T20:59")), "2026-08-09")
+        self.assertEqual(str(self._at("2026-08-10T21:00")), "2026-08-10")
+
+    def test_morning_delay_rolls_back(self) -> None:
+        """
+        2026-10-13 的真實案例：排程 21:23，實際在隔天 05:45 與 06:07 才執行。
+
+        舊的界線是 05:00，這兩次剛好跨過去，於是目標日期變成 10-13 ——
+        當天還沒開盤，九個資料源全空，撞上「超過半數失敗」而中止。
+        """
+        self.assertEqual(str(self._at("2026-10-13T05:45")), "2026-10-12")
+        self.assertEqual(str(self._at("2026-10-13T06:07")), "2026-10-12")
 
     def test_premarket_never_rolls_back(self) -> None:
         # 盤前本來就在清晨執行，回推會直接寫錯日期
         self.assertEqual(str(self._at("2026-08-11T06:45", "premarket")), "2026-08-11")
+        # 盤前即使被延遲到中午才跑，日期仍是當天
+        self.assertEqual(str(self._at("2026-10-13T11:30", "premarket")), "2026-10-13")
+
+
+class TestHolidaySkip(unittest.TestCase):
+    """
+    國定假日要安靜結束，不能以失敗收場。
+
+    2026-10-09 是國慶補假休市，但 is_trading_day() 只濾週末，於是整份照跑、
+    九個資料源全空、撞上「超過半數失敗」而失敗（#86／#87），每逢假日就寄兩封
+    失敗通知。休市不是故障。
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmpdir = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+    def _run(self, session: str, traded: bool):
+        """回傳 (exit code, 有沒有真的去抓資料)。"""
+        with (
+            patch.object(main_mod, "DOCS", self.tmpdir),
+            patch.object(main_mod, "DATA", self.tmpdir / "data"),
+            patch.object(main_mod, "market_traded_on", return_value=traded),
+            patch.object(main_mod.fetch, "fetch_taiex_ohlc", return_value=[{"close": 1.0}]),
+            patch(
+                "premarket.fetch_post.build_postmarket_payload", return_value=StubPayload()
+            ) as post_fetch,
+            patch.object(analyze, "generate_brief", return_value=GOOD_BRIEF),
+            patch.object(main_mod.render, "render", return_value="<html>x</html>"),
+        ):
+            sys.argv = ["premarket.main", "--session", session, "--date", DATE]
+            return main_mod.main(), post_fetch.called
+
+    def test_holiday_exits_zero_without_fetching(self) -> None:
+        code, fetched = self._run("postmarket", traded=False)
+        self.assertEqual(code, 0, "休市是正常情況，不該回傳非零 exit code")
+        self.assertFalse(fetched, "休市就不必白跑兩分鐘的抓取")
+        self.assertEqual(sorted(p.name for p in self.tmpdir.glob("*.md")), [])
+
+    def test_trading_day_proceeds(self) -> None:
+        code, fetched = self._run("postmarket", traded=True)
+        self.assertEqual(code, 0)
+        self.assertTrue(fetched, "有開盤就要照常抓資料")
+
+    def test_unknown_proceeds(self) -> None:
+        """
+        問不出來（None）要照常跑，絕不能當成休市。
+
+        證交所回 HTTP 200 加一頁 HTML 時 fetch 也是回 None。把它當休市的話,
+        端點一掛就會安靜跳過真正的交易日 —— 比失敗更糟,因為備援那次會做出
+        同樣的誤判，而且沒有人會收到通知。
+        """
+        code, fetched = self._run("postmarket", traded=None)
+        self.assertEqual(code, 0)
+        self.assertTrue(fetched, "狀態不明時要照常抓，讓既有的缺漏保護去判斷")
+
+    def test_premarket_does_not_consult_the_check(self) -> None:
+        """盤前的目標日期是『今天、開盤前』，本來就查不到指數，不能拿來判斷休市。"""
+        with (
+            patch.object(main_mod, "DOCS", self.tmpdir),
+            patch.object(main_mod, "DATA", self.tmpdir / "data"),
+            patch.object(main_mod, "market_traded_on", return_value=False) as chk,
+            patch.object(main_mod.fetch, "fetch_taiex_ohlc", return_value=[{"close": 1.0}]),
+            patch.object(main_mod.fetch, "build_payload", return_value=StubPayload()),
+            patch.object(main_mod, "load_history", return_value=[]),
+            patch.object(analyze, "generate_brief", return_value=GOOD_BRIEF),
+            patch.object(main_mod.render, "render", return_value="<html>x</html>"),
+        ):
+            sys.argv = ["premarket.main", "--date", DATE]
+            code = main_mod.main()
+        self.assertEqual(code, 0)
+        chk.assert_not_called()
+
+
+class TestErrorAnnotation(unittest.TestCase):
+    """
+    致命錯誤要同時寫成 GitHub annotation。
+
+    2026-10 金鑰過期那次，「API 金鑰無效或已過期…請更新 ANTHROPIC_API_KEY」
+    從第一天就印在日誌裡，但日誌要登入才看得到，run 頁面上只有一句
+    「Process completed with exit code 1」—— 於是連續失敗九個交易日才被發現。
+    """
+
+    def _emit(self, msg: str, in_actions: bool):
+        env = {"GITHUB_ACTIONS": "true"} if in_actions else {}
+        buf = io.StringIO()
+        with patch.dict("os.environ", env, clear=not in_actions):
+            with redirect_stdout(buf):
+                main_mod.emit_error(msg)
+        return buf.getvalue()
+
+    def test_writes_annotation_in_actions(self) -> None:
+        out = self._emit("API 金鑰無效或已過期，請更新 ANTHROPIC_API_KEY。", True)
+        self.assertIn("::error::", out)
+        self.assertIn("ANTHROPIC_API_KEY", out)
+
+    def test_collapses_newlines(self) -> None:
+        # annotation 不能跨行，換行會讓訊息在 run 頁面上被截斷
+        out = self._emit("第一行\n第二行\n第三行", True)
+        self.assertEqual(out.count("::error::"), 1)
+        self.assertNotIn("\n第", out)
+
+    def test_silent_outside_actions(self) -> None:
+        # 本機執行不該噴出 ::error:: 這種只有 CI 看得懂的字串
+        self.assertEqual(self._emit("本機跑的錯誤", False), "")
 
 
 class FakeResponse:
@@ -328,6 +451,7 @@ class TestBackupScheduleGuard(unittest.TestCase):
             patch.object(main_mod, "DOCS", self.tmpdir),
             patch.object(main_mod, "DATA", self.tmpdir / "data"),
             patch.object(main_mod.fetch, "fetch_taiex_ohlc", return_value=[{"close": 1.0}]),
+            patch.object(main_mod, "market_traded_on", return_value=True),
             patch("premarket.fetch_post.build_postmarket_payload", return_value=StubPayload()),
             patch.object(analyze, "generate_brief", return_value=GOOD_BRIEF) as brief,
             patch.object(main_mod.render, "render", return_value="<html>x</html>"),
@@ -414,6 +538,7 @@ class TestPrevTradeDateFallback(unittest.TestCase):
             # 會先被「報告已存在」的守衛攔下，測不到這裡要驗的中止路徑。
             patch.object(main_mod, "DOCS", self.data),
             patch.object(main_mod.fetch, "fetch_taiex_ohlc", return_value=None),
+            patch.object(main_mod, "market_traded_on", return_value=True),
         ):
             sys.argv = ["premarket.main", "--session", "postmarket", "--date", DATE]
             self.assertEqual(main_mod.main(), 1)

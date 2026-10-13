@@ -58,21 +58,28 @@ SPECS = {
 }
 
 
-POSTMARKET_ROLLOVER_HOUR = 5  # 凌晨 5 點前執行的盤後，視為前一天的場次
+# 盤後排程只在 21:23／22:17 觸發，所以「21 點前執行的盤後」一律是被延遲的那一次，
+# 處理的是前一天的場次。原本這個值是 5（凌晨 5 點），當時實測延遲 63~143 分鐘;
+# 2026-10 實測已經變成 5~9 小時，#88 在 05:45、#89 在 06:07 執行，雙雙跨過 5 點那條線,
+# 於是跑去抓一個還沒開盤的交易日，九個資料源全空而中止。
+#
+# 用 21 還有一個好處：盤後的關鍵資料融資餘額約 21:00 才公布，所以 21 點前執行
+# 無論如何都不該標成當天 —— 這條線同時擋掉延遲與手動誤觸兩種情況。
+POSTMARKET_ROLLOVER_HOUR = 21
 
 
 def _target_date(now: datetime, session: str) -> date:
     """
     盤後場次的目標日期。
 
-    GitHub Actions 的排程延遲可達兩小時以上（實測 143 分鐘），
-    21:30 的盤後排程有機會被推過午夜。若直接用執行當下的日期，
-    報告會標成隔天,而隔天的收盤資料當時還不存在 —— 產出一份幾乎全空的報告。
-    凌晨執行時往回算一天,才是那次排程原本要處理的交易日。
+    GitHub Actions 的排程延遲時數不定，21:23 的盤後排程經常被推過午夜甚至到清晨。
+    若直接用執行當下的日期，報告會標成隔天,而隔天的收盤資料當時還不存在 ——
+    產出一份幾乎全空的報告。往回算一天,才是那次排程原本要處理的交易日。
     """
     if session == "postmarket" and now.hour < POSTMARKET_ROLLOVER_HOUR:
         shifted = now.date() - timedelta(days=1)
-        log.info("凌晨 %02d:%02d 執行盤後，目標日期回推為 %s", now.hour, now.minute, shifted)
+        log.info("%02d:%02d 執行盤後（早於場次時間 %02d:00），目標日期回推為 %s",
+                 now.hour, now.minute, POSTMARKET_ROLLOVER_HOUR, shifted)
         return shifted
     return now.date()
 
@@ -116,8 +123,51 @@ def prev_trade_date_from_history(today: date) -> date | None:
 
 
 def is_trading_day(today: date) -> bool:
-    """今天是否可能開盤。週末直接排除；國定假日交給 workflow 的容錯（多跑一次不會壞）。"""
+    """今天是否可能開盤。只排除週末 —— 國定假日由 market_traded_on() 事後確認。"""
     return today.weekday() < 5
+
+
+def market_traded_on(day: date) -> bool | None:
+    """
+    那天到底有沒有開盤 —— 問證交所有沒有那天的指數，不自己維護行事曆。
+    回 True 有開盤、False 確定休市、None 問不出來。
+
+    只給盤後用。盤後的目標日期是「已經收盤的那天」,所以沒有資料就等於沒開盤;
+    盤前的目標日期是「今天、開盤前」,本來就查不到，不能用這個判斷。
+
+    2026-10-09 國慶補假休市，但 is_trading_day() 只濾週末，於是整份照跑、
+    九個資料源全空、撞上「超過半數失敗」而以失敗收場（#86／#87）。
+    休市不是故障,該安靜結束,不該每逢假日就寄兩封失敗通知。
+
+    三態是必要的：fetch_taiex_ohlc 回 None 時，可能是休市，也可能是證交所正在
+    鬧脾氣（回 HTTP 200 加一頁 HTML，重試三次都拿不到）。兩者混為一談的話,
+    端點一掛就會把真正的交易日當成假日安靜跳過 —— 那比失敗更糟,
+    因為備援那次會做出同樣的誤判,而且沒有任何人會收到通知。
+    問不出來就回 None,讓主流程照常往下跑,真的沒資料會被既有的
+    「超過半數資料源失敗」攔下來，那條路徑至少是響亮的。
+    """
+    rows = fetch.fetch_taiex_ohlc(day, lookback=1)
+    if not rows:
+        return None  # 端點給不出答案，不要假裝知道
+    # lookback=1 回的是「≤ day 的最後一根 K 棒」：等於 day 就是有開盤，
+    # 早於 day 就表示證交所答得出來、但那天沒有交易。
+    return rows[-1].get("date") == day.isoformat()
+
+
+def emit_error(msg: str) -> None:
+    """
+    把致命錯誤同時送進 GitHub 的 annotation。
+
+    log.error 只寫到日誌，而日誌要登入才看得到；run 頁面上只會留下一句
+    「Process completed with exit code 1」。2026-10 那次金鑰過期,訊息其實
+    從第一天就印得清清楚楚（「API 金鑰無效或已過期…請更新 ANTHROPIC_API_KEY」），
+    卻因為沒人會去翻日誌，連續失敗了九個交易日才被發現。
+    ::error:: 會直接顯示在 run 頁面最上方,而且不必登入就看得到。
+    """
+    log.error("%s", msg)
+    if os.getenv("GITHUB_ACTIONS") == "true":
+        # annotation 不能跨行，換行會被截斷
+        print(f"::error::{' '.join(msg.split())}", flush=True)
 
 
 def report_exists(today: date, spec: SessionSpec) -> bool:
@@ -200,7 +250,14 @@ def main() -> int:
     )
 
     if not is_trading_day(today):
-        log.info("%s 非交易日，結束。", today)
+        log.info("%s 非交易日（週末），結束。", today)
+        return 0
+
+    # 國定假日：盤後才查得出來（盤前的目標日期還沒開盤，查不到是正常的）。
+    # 放在抓資料之前,假日當天可以省下整整兩分鐘的徒勞抓取。
+    # 只有「確定休市」才跳過；問不出來（None）一律照常往下跑。
+    if args.session == "postmarket" and market_traded_on(today) is False:
+        log.info("%s 沒有開盤（國定假日），結束。", today)
         return 0
 
     # 備援排程用的守衛。GitHub 偶爾會把 schedule 事件整個丟掉 —— 2026-08-27 盤前
@@ -218,7 +275,7 @@ def main() -> int:
     if prev is None:
         prev = prev_trade_date_from_history(today)
         if prev is None:
-            log.error("問不到加權指數，也沒有歷史 payload 可回推前一交易日，中止。")
+            emit_error("問不到加權指數，也沒有歷史 payload 可回推前一交易日，中止。")
             return 1
         log.warning(
             "連續多天問不到加權指數（證交所端點可能故障），"
@@ -231,7 +288,7 @@ def main() -> int:
         try:
             from . import fetch_post
         except ImportError as exc:  # noqa: BLE001
-            log.error("盤後資料層缺失（premarket/fetch_post.py）: %s", exc)
+            emit_error(f"盤後資料層缺失（premarket/fetch_post.py）: {exc}")
             return 1
         # 盤後看的是今天收盤後的結果,所以 session_date 是今天、prev 供計算變化量
         payload = fetch_post.build_postmarket_payload(today, prev)
@@ -242,7 +299,10 @@ def main() -> int:
     if payload.missing:
         log.warning("缺少資料源: %s", "、".join(payload.missing))
     if len(payload.missing) >= 5:
-        log.error("超過半數資料源失敗，中止以免產生誤導性報告。")
+        emit_error(
+            "超過半數資料源失敗，中止以免產生誤導性報告。缺少: "
+            + "、".join(payload.missing)
+        )
         return 1
 
     DATA.mkdir(parents=True, exist_ok=True)
@@ -261,21 +321,19 @@ def main() -> int:
     try:
         brief_md = analyze.generate_brief(payload_dict, prev_payload, session=args.session)
     except analyze.BriefTruncated as exc:
-        log.error("報告不完整，不寫出檔案: %s", exc)
+        emit_error(f"報告不完整，不寫出檔案: {exc}")
         return 1
     except analyze.BriefUnavailable as exc:
         # 金鑰過期／限流／過載。訊息已經是人話，不需要 traceback。
-        log.error("%s", exc)
+        emit_error(str(exc))
         return 1
 
     # 檢查放在寫檔之前：截斷的報告一旦寫出去就會被 workflow commit 並發布，
     # 而且 exit code 0 會讓 Actions 顯示綠勾,沒有人會發現。
     if len(brief_md) < analyze.MIN_BRIEF_CHARS:
-        log.error(
-            "報告只有 %d 字元（低於 %d），視為產出失敗，不寫出檔案。內容: %r",
-            len(brief_md),
-            analyze.MIN_BRIEF_CHARS,
-            brief_md[:120],
+        emit_error(
+            f"報告只有 {len(brief_md)} 字元（低於 {analyze.MIN_BRIEF_CHARS}），"
+            f"視為產出失敗，不寫出檔案。內容: {brief_md[:120]!r}"
         )
         return 1
 
