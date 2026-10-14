@@ -84,12 +84,31 @@ def _get_json(url: str, params: dict | None = None) -> Any | None:
     return _fetch("GET", url, lambda r: r.json(), params=params)
 
 
-def _get_text(url: str, encoding: str = "utf-8") -> str | None:
-    def parse(r: requests.Response) -> str:
-        r.encoding = encoding
-        return r.text
+def _get_text(url: str, encoding: str = "utf-8", max_seconds: float | None = None) -> str | None:
+    """
+    max_seconds：整段下載的總時限，給那種「很大又可能變慢」的頁面用。
 
-    return _fetch("GET", url, parse)
+    TIMEOUT 是 requests 的「單次讀取」逾時，涓流式的回應永遠觸發不了它 ——
+    2026-10-14 證交所那張 7MB 的 ISIN 表就是這樣，在 runner 上拖了八分半還沒結束,
+    把整個 job 撞上 10 分鐘上限而被取消。超時當成這次請求失敗,
+    會走既有的退避重試,最後回 None 交給呼叫端決定怎麼辦。
+    """
+
+    def parse(r: requests.Response) -> str:
+        if max_seconds is None:
+            r.encoding = encoding
+            return r.text
+        deadline = time.monotonic() + max_seconds
+        buf = bytearray()
+        for chunk in r.iter_content(64 * 1024):
+            buf += chunk
+            if time.monotonic() > deadline:
+                raise TimeoutError(
+                    f"下載超過 {max_seconds:.0f} 秒仍未結束（已收 {len(buf)} 位元組）"
+                )
+        return buf.decode(encoding, errors="replace")
+
+    return _fetch("GET", url, parse, stream=max_seconds is not None)
 
 
 def _post_csv(url: str, data: dict) -> list[list[str]] | None:

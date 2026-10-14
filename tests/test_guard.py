@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 import unittest
@@ -494,6 +495,96 @@ class TestBackupScheduleGuard(unittest.TestCase):
         with patch.dict("os.environ", {"GITHUB_OUTPUT": str(out)}):
             self._run(report_on_disk=False)
         self.assertFalse(out.exists(), "有產出報告時不得寫 skipped，不然通知會被誤擋")
+
+
+class TestSlowDownloadDeadline(unittest.TestCase):
+    """
+    大檔下載要有總時限。
+
+    背景：證交所那張 7MB 的 ISIN 表在 runner 上下載八分半還沒結束，把整個 job
+    撞上 10 分鐘上限而被取消（2026-10-14）。requests 的 TIMEOUT 是「單次讀取」
+    逾時，涓流式的回應每次都在 20 秒內送來一點，所以永遠觸發不了。
+    """
+
+    class _Streaming:
+        def __init__(self, chunks):
+            self._chunks = chunks
+            self.encoding = "utf-8"
+
+        def raise_for_status(self):
+            pass
+
+        def iter_content(self, _size):
+            return iter(self._chunks)
+
+    def _get(self, chunks, clock):
+        with (
+            patch.object(fetch.requests, "request", return_value=self._Streaming(chunks)),
+            patch.object(fetch, "_throttle"),
+            patch.object(fetch.time, "sleep"),
+            patch.object(fetch.time, "monotonic", side_effect=clock),
+        ):
+            return fetch._get_text("https://isin.twse.com.tw/x", max_seconds=90)
+
+    def test_slow_stream_gives_up(self) -> None:
+        # 時鐘每次呼叫跳 60 秒：第二塊就超過 90 秒的預算
+        clock = iter(range(0, 100_000, 60)).__next__
+        self.assertIsNone(self._get([b"a", b"b", b"c"], clock), "超時要回 None，交給呼叫端決定")
+
+    def test_fast_stream_succeeds(self) -> None:
+        clock = iter(range(0, 100_000, 1)).__next__
+        self.assertEqual(self._get([b"ab", b"cd"], clock), "abcd")
+
+
+class TestEtfCacheFallback(unittest.TestCase):
+    """重抓 ETF 名單失敗時，沿用過期的快取，不要拖垮整份報告。"""
+
+    def setUp(self) -> None:
+        from premarket import fetch_post
+
+        self.fp = fetch_post
+        self._tmp = tempfile.TemporaryDirectory()
+        self.cache = Path(self._tmp.name) / "etf-codes.json"
+        self.addCleanup(self._tmp.cleanup)
+
+    def _write_cache(self, days_old: int, codes=("0050", "0056")) -> None:
+        from datetime import datetime as dt, timedelta as td
+
+        self.cache.write_text(
+            json.dumps(
+                {
+                    "fetched_at": (dt.now() - td(days=days_old)).isoformat(timespec="seconds"),
+                    "codes": list(codes),
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    def _run(self, days_old: int, refresh_result):
+        self._write_cache(days_old)
+        with (
+            patch.object(self.fp, "ETF_CACHE", self.cache),
+            patch.object(self.fp, "_get_text", return_value=refresh_result) as got,
+        ):
+            return self.fp.fetch_etf_codes(), got.called
+
+    def test_fresh_cache_skips_network(self) -> None:
+        codes, called = self._run(1, None)
+        self.assertEqual(codes, {"0050", "0056"})
+        self.assertFalse(called, "沒過期就不該連網")
+
+    def test_expired_cache_survives_failed_refresh(self) -> None:
+        # 這就是 2026-10-14 的情境：快取過期 13 天，重抓拿不到東西
+        codes, called = self._run(13, None)
+        self.assertTrue(called)
+        self.assertEqual(codes, {"0050", "0056"}, "重抓失敗要沿用舊名單，不能回 None")
+
+    def test_no_cache_and_failed_refresh_returns_none(self) -> None:
+        with (
+            patch.object(self.fp, "ETF_CACHE", self.cache),
+            patch.object(self.fp, "_get_text", return_value=None),
+        ):
+            self.assertIsNone(self.fp.fetch_etf_codes(), "連舊名單都沒有時才回 None")
 
 
 class TestPrevTradeDateFallback(unittest.TestCase):

@@ -33,7 +33,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 盤後正常約 5 分鐘（抓資料 2 分 + API 3 分），但 API latency 會浮動,
+    # ETF 名單過期時還要多花最多 90 秒重抓。2026-10-14 就是卡在 10 分鐘被取消。
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 

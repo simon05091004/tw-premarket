@@ -258,18 +258,27 @@ def fetch_etf_codes(force: bool = False) -> set[str] | None:
 
     頁面約 7MB，快取 7 天。
     """
+    stale: set[str] | None = None  # 過期但仍可用的名單，重抓失敗時的後備
     if not force and ETF_CACHE.exists():
         try:
             cached = json.loads(ETF_CACHE.read_text(encoding="utf-8"))
             age = datetime.now() - datetime.fromisoformat(cached["fetched_at"])
             if age < timedelta(days=ETF_CACHE_DAYS):
                 return set(cached["codes"])
+            stale = set(cached["codes"])
             log.info("ETF 名單快取已過期（%d 天），重抓", age.days)
         except Exception as exc:  # noqa: BLE001
             log.warning("ETF 名單快取讀取失敗，重抓: %s", exc)
 
-    html = _get_text(TWSE_ISIN, encoding="big5")
+    # 總時限 90 秒：這張表 7MB，在 runner 上曾經下載八分半還沒結束，
+    # 把整個 job 拖到 10 分鐘上限而被取消（2026-10-14）。
+    html = _get_text(TWSE_ISIN, encoding="big5", max_seconds=90)
     if not html:
+        if stale is not None:
+            # ETF 掛牌異動很少，用一份舊名單遠勝於讓整份報告掛掉 ——
+            # 它只影響「外資買賣超排除ETF」這一個衍生欄位。
+            log.warning("ETF 名單重抓失敗，沿用過期的快取（%d 檔）", len(stale))
+            return stale
         return None
     codes: set[str] = set()
     category = ""
@@ -285,7 +294,7 @@ def fetch_etf_codes(force: bool = False) -> set[str] | None:
             codes.add(code)
     if not codes:
         log.warning("ISIN 表解析不到 ETF，格式可能已變更")
-        return None
+        return stale  # 有舊名單就先頂著，沒有才回 None
 
     try:
         ETF_CACHE.parent.mkdir(parents=True, exist_ok=True)
