@@ -506,11 +506,27 @@ class TestBackupScheduleGuard(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("skipped=true", out.read_text(encoding="utf-8"))
 
+    def test_success_reports_the_report_date(self) -> None:
+        """
+        產出成功時要把「報告日期」交給 workflow。
+
+        LINE 通知原本寫的是執行當天，補跑舊日期會發出一則標著今天、
+        內容卻是別天的通知 —— 一次補七天就是七則都寫同一天。
+        """
+        out = self.tmpdir / "gh_output"
+        with patch.dict("os.environ", {"GITHUB_OUTPUT": str(out)}):
+            code, brief = self._run(report_on_disk=False)
+        self.assertEqual(code, 0)
+        brief.assert_called_once()
+        self.assertIn(f"report_date={DATE}", out.read_text(encoding="utf-8"))
+
     def test_normal_run_does_not_signal_skip(self) -> None:
         out = self.tmpdir / "gh_output"
         with patch.dict("os.environ", {"GITHUB_OUTPUT": str(out)}):
             self._run(report_on_disk=False)
-        self.assertFalse(out.exists(), "有產出報告時不得寫 skipped，不然通知會被誤擋")
+        # 成功路徑本來就會寫 report_date，所以檢查內容而不是檔案存不存在
+        written = out.read_text(encoding="utf-8") if out.exists() else ""
+        self.assertNotIn("skipped", written, "有產出報告時不得寫 skipped，不然通知會被誤擋")
 
 
 class TestSlowDownloadDeadline(unittest.TestCase):

@@ -175,6 +175,15 @@ def report_exists(today: date, spec: SessionSpec) -> bool:
     return (DOCS / f"{spec.out_stem}-{today.isoformat()}.md").exists()
 
 
+def set_output(key: str, value: str) -> None:
+    """寫一筆 step output 給 workflow 用；不在 Actions 裡就什麼都不做。"""
+    out = os.getenv("GITHUB_OUTPUT")
+    if not out:
+        return
+    with open(out, "a", encoding="utf-8") as f:
+        f.write(f"{key}={value}\n")
+
+
 def signal_skipped() -> None:
     """
     告訴 workflow「這次沒產出新報告」。
@@ -182,11 +191,7 @@ def signal_skipped() -> None:
     LINE 通知那步的條件是 success(),光是提早 return 0 擋不住它 ——
     備援那次會再廣播一則一模一樣的通知給所有訂閱者。
     """
-    out = os.getenv("GITHUB_OUTPUT")
-    if not out:
-        return
-    with open(out, "a", encoding="utf-8") as f:
-        f.write("skipped=true\n")
+    set_output("skipped", "true")
 
 
 def load_prev_payload(prefix: str = "payload") -> dict | None:
@@ -345,6 +350,11 @@ def main() -> int:
     html_doc = render.render(payload_dict, brief_md, session=args.session)
     (DOCS / f"{spec.out_stem}-{today.isoformat()}.html").write_text(html_doc, encoding="utf-8")
     (DOCS / spec.latest_html).write_text(html_doc, encoding="utf-8")  # 最新一份
+
+    # 報告日期交給 LINE 通知用。原本那步寫的是 $(date +%m/%d)，也就是「執行當天」,
+    # 補跑舊日期時會發出一則標著今天、內容卻是別天的通知 —— 一次補七天就是七則
+    # 都寫著同一天。報告日期只有這裡知道，不要讓 shell 自己猜。
+    set_output("report_date", today.isoformat())
 
     log.info("完成: %s", out_md.name)
     return 0

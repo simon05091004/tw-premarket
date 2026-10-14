@@ -81,7 +81,11 @@ jobs:
           LINE_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           PAGES_URL: ${{ vars.PAGES_URL }}
         run: |
-          MSG="台股盤前分析 $(date +%m/%d) 已更新
+          # 日期用報告本身的日期，不是執行當天 —— 補跑舊日期時兩者會差好幾天。
+          # 取不到就退回今天（例如 main.py 還沒寫出這個 output 的舊版）。
+          D="${{ steps.gen.outputs.report_date }}"
+          if [ -n "$D" ]; then WHEN="${D:5:2}/${D:8:2}"; else WHEN="$(date +%m/%d)"; fi
+          MSG="台股盤前分析 ${WHEN} 已更新
           ${PAGES_URL:-https://github.com/${{ github.repository }}}"
           # 一定要看回應碼：curl 沒加 --fail 的話，LINE 回 401 它照樣 exit 0，
           # step 會標成綠的，通知默默停掉沒有人會發現。
