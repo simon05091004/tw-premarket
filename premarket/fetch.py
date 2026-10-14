@@ -51,7 +51,11 @@ def _throttle(url: str) -> None:
 
 
 def _fetch(
-    method: str, url: str, parse: Callable[[requests.Response], Any], **kw: Any
+    method: str,
+    url: str,
+    parse: Callable[[requests.Response], Any],
+    retries: int = RETRIES,
+    **kw: Any,
 ) -> Any | None:
     """
     帶節流與重試的請求。失敗回 None —— 呼叫端一律把 None 當成「這項沒資料」，
@@ -62,14 +66,14 @@ def _fetch(
     攔不到。原本只在迴圈外解析,這種故障連一次都不會重試 —— 2026-08-11 盤前
     12 次請求全中，整份報告因為找不到前一交易日而中止。
     """
-    for attempt in range(1, RETRIES + 1):
+    for attempt in range(1, retries + 1):
         _throttle(url)
         try:
             r = requests.request(method, url, headers=UA, timeout=TIMEOUT, **kw)
             r.raise_for_status()
             return parse(r)
         except Exception as exc:  # noqa: BLE001
-            if attempt == RETRIES:
+            if attempt == retries:
                 log.warning("%s %s 失敗（第 %d 次，放棄）: %s", method, url, attempt, exc)
                 return None
             backoff = 2.0 * attempt
@@ -84,7 +88,12 @@ def _get_json(url: str, params: dict | None = None) -> Any | None:
     return _fetch("GET", url, lambda r: r.json(), params=params)
 
 
-def _get_text(url: str, encoding: str = "utf-8", max_seconds: float | None = None) -> str | None:
+def _get_text(
+    url: str,
+    encoding: str = "utf-8",
+    max_seconds: float | None = None,
+    retries: int = RETRIES,
+) -> str | None:
     """
     max_seconds：整段下載的總時限，給那種「很大又可能變慢」的頁面用。
 
@@ -108,7 +117,7 @@ def _get_text(url: str, encoding: str = "utf-8", max_seconds: float | None = Non
                 )
         return buf.decode(encoding, errors="replace")
 
-    return _fetch("GET", url, parse, stream=max_seconds is not None)
+    return _fetch("GET", url, parse, retries=retries, stream=max_seconds is not None)
 
 
 def _post_csv(url: str, data: dict) -> list[list[str]] | None:

@@ -270,9 +270,11 @@ def fetch_etf_codes(force: bool = False) -> set[str] | None:
         except Exception as exc:  # noqa: BLE001
             log.warning("ETF 名單快取讀取失敗，重抓: %s", exc)
 
-    # 總時限 90 秒：這張表 7MB，在 runner 上曾經下載八分半還沒結束，
-    # 把整個 job 拖到 10 分鐘上限而被取消（2026-10-14）。
-    html = _get_text(TWSE_ISIN, encoding="big5", max_seconds=90)
+    # 這張表 8.7MB，本機 18 秒，runner 上慢得多且時快時慢：90 秒那版三次都沒下載完
+    # （分別收到 8.1MB／1.6MB／2.5MB，第一次差一點就到了）。
+    # 改成「一次機會、給足 240 秒」—— 重試三次只是把同一個慢速連線重來，
+    # 既吃掉五分鐘又未必比較順；真的失敗就用舊名單，明天再試。
+    html = _get_text(TWSE_ISIN, encoding="big5", max_seconds=240, retries=1)
     if not html:
         if stale is not None:
             # ETF 掛牌異動很少，用一份舊名單遠勝於讓整份報告掛掉 ——

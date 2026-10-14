@@ -368,6 +368,22 @@ class TestErrorAnnotation(unittest.TestCase):
         # 本機執行不該噴出 ::error:: 這種只有 CI 看得懂的字串
         self.assertEqual(self._emit("本機跑的錯誤", False), "")
 
+    def test_unexpected_exception_still_annotates(self) -> None:
+        """
+        未分類的例外也要在 run 頁面留下一行。
+
+        2026-10-14 的「API key is not scoped to a workspace」是 400，刻意不被
+        BriefUnavailable 收編（traceback 對這類設定錯誤最有價值），結果 run 頁面上
+        又只剩一句 exit code 1。
+        """
+        buf = io.StringIO()
+        with patch.dict("os.environ", {"GITHUB_ACTIONS": "true"}):
+            with patch.object(main_mod, "main", side_effect=RuntimeError("壞掉了")):
+                with redirect_stdout(buf):
+                    code = main_mod.cli()
+        self.assertEqual(code, 1)
+        self.assertIn("::error::RuntimeError: 壞掉了", buf.getvalue())
+
 
 class FakeResponse:
     """證交所忙碌時的樣子：HTTP 200，但 body 是一頁 HTML。"""

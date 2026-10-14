@@ -350,5 +350,22 @@ def main() -> int:
     return 0
 
 
+def cli() -> int:
+    """
+    把沒預料到的例外也變成 run 頁面上看得見的一行。
+
+    刻意不吞掉 traceback —— 未分類的例外（400 參數錯誤、模型名打錯…）代表設定或
+    程式被改壞了,堆疊資訊最有價值。但光有 traceback 仍然要登入翻日誌才看得到,
+    2026-10-14 那次「API key is not scoped to a workspace」就是這樣:
+    訊息本身講得很清楚，run 頁面上卻只有一句 exit code 1。
+    """
+    try:
+        return main()
+    except Exception as exc:  # noqa: BLE001
+        log.exception("未預期的錯誤")
+        emit_error(f"{type(exc).__name__}: {exc}")
+        return 1
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(cli())
