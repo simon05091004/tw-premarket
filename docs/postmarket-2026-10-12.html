@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>台股盤後 · 2026-10-12</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#15171C">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="台股">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Serif+TC:wght@400;600&family=Noto+Sans+TC:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper:#FCFCFA; --ink:#15171C; --muted:#71757E; --rule:#E4E3DE;
+    --up:#C8322B; --down:#0E7A52;
+    --mono:"IBM Plex Mono","Noto Sans TC",monospace;
+    --serif:"Noto Serif TC",Georgia,serif;
+    --sans:"Noto Sans TC",system-ui,sans-serif;
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:var(--serif); line-height:1.75;
+    -webkit-text-size-adjust:100%;
+  }
+  .wrap { max-width:44rem; margin:0 auto; padding:2rem 1.25rem 4rem; }
+
+  /* ---- 報頭 ---- */
+  header { border-bottom:2px solid var(--ink); padding-bottom:.75rem; }
+  .switch { margin-top:.6rem; font-family:var(--sans); font-size:.8rem; }
+  .switch a {
+    display:inline-block; padding:.35rem .7rem; border:1px solid var(--rule);
+    border-radius:999px; color:var(--muted); text-decoration:none;
+  }
+  .switch a:active { background:var(--ink); color:var(--paper); }
+  .eyebrow {
+    font-family:var(--mono); font-size:.7rem; letter-spacing:.18em;
+    text-transform:uppercase; color:var(--muted);
+  }
+  h1 {
+    font-family:var(--mono); font-weight:600; font-size:1.6rem;
+    letter-spacing:-.01em; margin:.35rem 0 .1rem;
+  }
+  .sub { font-family:var(--mono); font-size:.78rem; color:var(--muted); }
+
+  /* ---- 簽名：夜間軌跡 ---- */
+  .track {
+    list-style:none; margin:1.5rem 0 2rem; padding:0;
+    display:grid; grid-template-columns:repeat(5,1fr); gap:0;
+    border-top:1px solid var(--rule); border-bottom:1px solid var(--rule);
+  }
+  .track li {
+    padding:.7rem .4rem; text-align:center; position:relative;
+    font-family:var(--mono);
+  }
+  .track li + li { border-left:1px solid var(--rule); }
+  .track .t { display:block; font-size:.68rem; color:var(--muted); letter-spacing:.06em; }
+  .track .lb { display:block; font-size:.72rem; margin:.15rem 0; font-family:var(--sans); }
+  .track .v { display:block; font-size:.8rem; font-weight:600; min-height:1.2em; }
+  .track .now { background:var(--ink); }
+  .track .now .t, .track .now .lb { color:#C9CBD1; }
+  .track .now .v { color:#FFF; }
+  .track .now .v.up { color:#FF8A80; }
+  .track .now .v.down { color:#6EE7B7; }
+
+  /* ---- 數據表 ---- */
+  table {
+    width:100%; border-collapse:collapse; margin:.75rem 0 1.5rem;
+    font-family:var(--mono); font-size:.84rem;
+    font-variant-numeric:tabular-nums;
+  }
+  th, td { padding:.4rem .5rem; border-bottom:1px solid var(--rule); text-align:left; }
+  thead th {
+    font-size:.68rem; letter-spacing:.1em; text-transform:uppercase;
+    color:var(--muted); font-weight:500; border-bottom:1px solid var(--ink);
+  }
+  tbody th { font-weight:500; font-family:var(--sans); }
+  .num { text-align:right; }
+  .up { color:var(--up); }
+  .down { color:var(--down); }
+  .flat { color:var(--muted); }
+
+  /* ---- 內文 ---- */
+  h2 {
+    font-family:var(--mono); font-size:.95rem; font-weight:600;
+    margin:2.25rem 0 .5rem; padding-top:.5rem;
+    border-top:1px solid var(--rule); letter-spacing:.01em;
+  }
+  h3 { font-family:var(--sans); font-size:.9rem; margin:1.25rem 0 .35rem; }
+  p { margin:.6rem 0; font-size:.95rem; }
+  ul { margin:.6rem 0; padding-left:1.1rem; }
+  li { margin:.3rem 0; font-size:.95rem; }
+  strong { font-weight:600; }
+  code { font-family:var(--mono); font-size:.86em; background:#F0EFEA; padding:.05em .3em; }
+  .note {
+    font-family:var(--sans); font-size:.78rem; color:var(--muted);
+    border-left:2px solid var(--rule); padding-left:.75rem; margin-top:2rem;
+  }
+  .missing {
+    font-family:var(--mono); font-size:.75rem; color:var(--down);
+    border:1px solid var(--rule); padding:.6rem .75rem; margin:1rem 0;
+  }
+  footer {
+    margin-top:3rem; padding-top:1rem; border-top:1px solid var(--rule);
+    font-family:var(--mono); font-size:.7rem; color:var(--muted);
+  }
+  @media (max-width:30rem) {
+    .track { grid-template-columns:repeat(3,1fr); }
+    .track li:nth-child(4) { border-left:none; }
+    h1 { font-size:1.3rem; }
+  }
+  @media (prefers-reduced-motion:no-preference) {
+    .wrap { animation:fade .4s ease-out; }
+    @keyframes fade { from { opacity:0; transform:translateY(4px); } to { opacity:1; } }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">台股盤後 · Post-market</div>
+    <h1>2026-10-12</h1>
+    <div class="sub">產生於 2026-10-14 13:55 · 前一交易日 2026-10-09</div>
+    <div class="switch"><a href="index.html">看最新盤前分析 →</a></div>
+  </header>
+
+  <script>
+    // 註冊失敗（例如用 file:// 開啟）不影響閱讀，靜默略過即可
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("sw.js").catch(function () {});
+      });
+    }
+  </script>
+
+  <ol class='track'><li class=''><span class='t'>10-09 13:30</span><span class='lb'>台股收盤</span><span class='v flat'>49,302</span></li><li class=''><span class='t'>10-09 15:00</span><span class='lb'>夜盤開始</span><span class='v flat'></span></li><li class=''><span class='t'>10-09</span><span class='lb'>美股收盤</span><span class='v flat'>—</span></li><li class=''><span class='t'>05:00</span><span class='lb'>夜盤結束</span><span class='v flat'>—</span></li><li class='now'><span class='t'>07:00</span><span class='lb'>現在</span><span class='v flat'>—</span></li></ol>
+
+  <h2>國際盤數據</h2>
+  <table>
+    <thead><tr><th>指數／標的</th><th class="num">收盤</th><th class="num">漲跌</th></tr></thead>
+    <tbody><tr><th>道瓊</th><td class='num'>—</td><td class='num'>—</td></tr><tr><th>那斯達克</th><td class='num'>—</td><td class='num'>—</td></tr><tr><th>標普500</th><td class='num'>—</td><td class='num'>—</td></tr><tr><th>費城半導體</th><td class='num'>—</td><td class='num'>—</td></tr><tr><th>台積電ADR</th><td class='num'>—</td><td class='num'>—</td></tr><tr><th>聯電ADR</th><td class='num'>—</td><td class='num'>—</td></tr><tr><th>日月光ADR</th><td class='num'>—</td><td class='num'>—</td></tr><tr><th>VIX</th><td class='num'>—</td><td class='num'>—</td></tr><tr><th>WTI原油</th><td class='num'>—</td><td class='num'>—</td></tr><tr><th>美債10年殖利率</th><td class='num'>—</td><td class='num'>—</td></tr><tr><th>美元兌台幣</th><td class='num'>—</td><td class='num'>—</td></tr><tr><th>日經225</th><td class='num'>—</td><td class='num'>—</td></tr><tr><th>韓國KOSPI</th><td class='num'>—</td><td class='num'>—</td></tr></tbody>
+  </table>
+
+  
+
+  <h2>1. 今日 K 線的形態</h2>
+<p>開盤 49272.08，最高 49412.9，最低 48768.82，收盤 49301.96，漲跌 -11.48 點（-0.02%）。上影線 110.94 點、下影線 503.26 點、實體僅 29.88 點、振幅達 644.08 點。</p>
+<p>開盤即最低與開盤即最高皆為 false，盤中經歷了一次探低又拉回的過程。下影線（503.26）遠大於實體（29.88），約達 17 倍，顯示盤中跌破 48800 附近後出現明顯承接；上影線（110.94）也大於實體，代表高點同樣有賣壓。整體看是一根「高檔震盪、幾乎收平」的長影線十字線，多空在此區間拉鋸，但收盤幾乎原地踏步，不算強勢也不算弱勢結構。</p>
+<h2>2. 量價關係</h2>
+<p>當日成交金額 8945.22 億，較前一日 9245.09 億小幅收斂（量能變化率 -3.24%）；但對照近 5 日均量 10085.11 億，實際萎縮幅度達 -11.3%，屬於明顯以上的量能退潮。指數持平、量能卻較近期均量大幅萎縮，顯示追價與出貨意願都不強，盤面進入觀望。</p>
+<h2>3. 市場廣度</h2>
+<p>上漲 538 家、下跌 451 家，漲跌家數比 1.19；漲停 25 家、跌停僅 2 家。指數表面-0.02% 幾乎無感，但個股廣度其實偏多，顯示拖累指數的是少數權值股而非全面下跌。</p>
+<p>櫃買指數收 427.9，漲幅 0.28%，相對加權強弱 +0.3%（小幅），資金對中小型股略偏友善，但幅度有限，稱不上明顯擴散。</p>
+<p>類股分化明顯：航運類 +5.12%、金融保險 +2.87% 走強；塑膠 -1.75%、其他電子 -1.12%、電子工業 -0.37%、半導體 -0.35% 走弱。今天是傳產、金融撐盤，電子權值股被按在水下的格局。</p>
+<h2>4. 籌碼：現貨</h2>
+<p>外資及陸資現貨買賣超總額 -521.98 億，其中 ETF 部分換算 -23.62 億，佔比 4.5%，遠低於 30% 門檻，代表這天的外資數字主要反映對個股的真實態度，排除 ETF 後淨額為 -498.36 億。</p>
+<p>排除 ETF 後，賣超合計 -998.66 億（374 家），買超合計 500.13 億（404 家）。賣超前十集中在電子權值股：台積電 -239.34 億、聯發科 -97.45 億、鴻海 -61.98 億、大立光 -46.77 億、台達電 -35.42 億、金像電 -28.52 億、臻鼎-KY -21.36 億、聯電 -19.7 億，另有塑化族群台塑 -29.76 億、南亞 -25.54 億。台積電單一檔賣超佔賣超合計的比重約 24%，超過兩成門檻，這天的賣壓高度集中在台積電。</p>
+<p>買超前十則分散在創意、長榮、鴻勁、穎崴、日月光投控、台新新光金、欣興、和碩、台表科、富世達，最大的創意僅佔買超合計約 6.9%，不算集中。</p>
+<p>換算與總額差額 0.05 億，佔外資買賣超總額比例約 0.0%，遠低於 15% 門檻，換算誤差在門檻內，可信度無虞。</p>
+<h2>5. 籌碼：期貨</h2>
+<p>水位：外資淨未平倉 -82806 口，投信 +76848 口，自營商 +147 口。</p>
+<p>動作：外資單日 +388 口（佔水位 0.47%）、投信單日 +509 口（佔水位 0.66%）、自營商單日 +681 口（因水位基期極小，佔比 463% 無參考意義）。外資與投信的單日增減都低於 1% 門檻，<strong>只能陳述數字，不得作為多空判斷依據</strong>。</p>
+<p>現貨面外資大舉賣超個股（-498.36 億），期貨面卻幾乎沒有動作——這組合不能歸類為「加空」或「回補」，只能說期貨部位這天維持原地，現貨調節的訊號比期貨更明確。</p>
+<p><code>外資投信鏡像對峙</code> 為 true，外資淨未平倉 -82806 口對投信 +76848 口，兩者合計 -5958 口，量級比 0.93，接近對等，是外資與投信期貨部位的極端對峙格局，波動放大的風險存在。</p>
+<p>期現價差：當日 7.04 點，前日 35.56 點，當日收窄 -28.52 點，未跨越正負號、單日變動也未超過 150 點門檻，不構成「異常」。但若看不含今天的脈絡，今日前均價差為 170.65 點、今日前最小僅 35.56 點，今天的 7.04 點已經<strong>走出前期區間</strong>（<code>今日走出前期區間</code> 為 true），是過去幾天沒出現過的低水位，這點要獨立看待。方向上，<code>今日為常態方向</code> 為 true，今天仍是正價差、屬於常態方向，並未翻轉，真正該被標記的是前段期間價差一路收斂的趨勢本身。除息影響為 0（<code>有顯著除息</code> false），今天的價差變動不是配息造成的機械效應。</p>
+<h2>6. 融資與散戶槓桿</h2>
+<p>融資餘額 6533.3 億，較前日 6464.06 億增加 69.24 億，<code>融資連續增減天數</code> 為 +4，連續第 4 天增加。</p>
+<p><code>融資背離警示</code> 為 true：<code>指數跌但融資增_連續天數</code> 為 3，過去 3 個交易日指數連跌（10/7 -16.18、10/8 -492.93、10/12 -11.48），融資卻連續增加，散戶在指數轉弱期間逆勢加碼，籌碼持續由法人端流向散戶端。若跌勢延續，這批部位將成為潛在的斷頭賣壓來源，這是今天籌碼面最需要盯防的警訊。</p>
+<h2>7. 關鍵價位</h2>
+<p>5MA 49591.27、10MA 48838.23、20MA 47793.78、60MA 45787.96。<code>均線多頭排列</code>（5&gt;10&gt;20）成立，<code>20日均線在60日均線之上</code> 也成立，<code>完整多頭排列_含60MA</code> 為 true，中短期結構一致偏多。</p>
+<p>但今天收盤 49301.96 已跌破 5 日均線（49591.27），短線動能轉弱；10 日均線 48838.23 是較貼近的下檔支撐。指數對 20MA 乖離 +3.16%，對 60MA 乖離 +7.67%，60MA 乖離偏高，拉回測試均線的風險仍在，但尚未到極端水位。近 20 日高點 49968.92，距現價 1.35%，仍在短線壓力範圍內可視為有效壓力參考。</p>
+<h2>8. 明日觀察重點</h2>
+<p>1. 5MA 49591 能否收復，否則短線偏弱格局延續。</p>
+<p>2. 期現價差是否續收斂並跌破 0，一旦跨越正負號才是期貨端真正轉空的訊號，今天尚未發生。</p>
+<p>3. 融資背離若延續到第 4 天指數續跌，斷頭風險將升溫，須緊盯融資餘額變化。</p>
+<p>4. 外資現貨對台積電等電子權值股的賣超是否持續集中，若擴散到更多權值股，加權指數恐進一步承壓。</p>
+<p>5. 成交量能若續萎縮至近 5 日均量以下更多，代表買賣雙方都轉趨觀望，變盤前兆增加。</p>
+<h2>9. 隔日觀察清單</h2>
+<p>本清單依 <code>short_watchlist.條件</code> 篩選：量價背離（量比 ≥1.5 且收黑或上影線/實體≥1.5）、籌碼轉弱（外資連續賣超≥2天）、過熱回落（對10日均乖離≥8% 且收黑），並以成交金額≥1億為流動性下限。全市場檢查 1371 檔，命中 153 檔（命中3條件 2 檔、命中2條件 17 檔、命中1條件 134 檔），命中檔中可先賣後買共 142 檔。本表為命中檔中量比最高的前 15 檔（清單上限 15），其中可先賣後買 14 檔。</p>
+<table><thead><tr>
+<th>代號</th>
+<th>名稱</th>
+<th>漲跌幅%</th>
+<th>收黑</th>
+<th>量比</th>
+<th>對10日均乖離%</th>
+<th>外資連續賣超天數</th>
+<th>融券餘額(股)</th>
+<th>命中條件</th>
+</tr></thead><tbody>
+<tr><td>1325</td><td>恆大</td><td>1.47</td><td>true</td><td>10.69</td><td>16.57</td><td>2</td><td>2,221,000</td><td>量價背離、籌碼轉弱、過熱回落</td></tr>
+<tr><td>7740</td><td>熙特爾-創</td><td>-2.95</td><td>true</td><td>3.34</td><td>8.95</td><td>3</td><td>1,342,125</td><td>量價背離、籌碼轉弱、過熱回落</td></tr>
+<tr><td>1312</td><td>國喬</td><td>5.94</td><td>true</td><td>6.98</td><td>8.65</td><td>0</td><td>47,335,667</td><td>量價背離、過熱回落</td></tr>
+<tr><td>9919</td><td>康那香</td><td>3.73</td><td>true</td><td>5.51</td><td>17.61</td><td>0</td><td>2,306,000</td><td>量價背離、過熱回落</td></tr>
+<tr><td>6753</td><td>龍德造船</td><td>-3.44</td><td>false</td><td>3.49</td><td>-4.21</td><td>3</td><td>1,346,050</td><td>量價背離、籌碼轉弱</td></tr>
+<tr><td>009829</td><td>大華韓國KOSPI50</td><td>-4.01</td><td>true</td><td>3.32</td><td>-5.87</td><td>3</td><td>16,115,000</td><td>量價背離、籌碼轉弱</td></tr>
+<tr><td>3036</td><td>文曄</td><td>0.46</td><td>true</td><td>2.18</td><td>2.26</td><td>3</td><td>48,192,838</td><td>量價背離、籌碼轉弱</td></tr>
+<tr><td>5243</td><td>乙盛-KY</td><td>-4.29</td><td>true</td><td>2.10</td><td>6.20</td><td>3</td><td>2,812,000</td><td>量價背離、籌碼轉弱</td></tr>
+<tr><td>2359</td><td>所羅門</td><td>0.39</td><td>false</td><td>2.08</td><td>-0.09</td><td>2</td><td>10,855,000</td><td>量價背離、籌碼轉弱</td></tr>
+<tr><td>1301</td><td>台塑</td><td>-0.74</td><td>true</td><td>1.98</td><td>16.08</td><td>1</td><td>4,429,820</td><td>量價背離、過熱回落</td></tr>
+<tr><td>2340</td><td>台亞</td><td>-2.84</td><td>true</td><td>1.95</td><td>15.19</td><td>1</td><td>8,340,000</td><td>量價背離、過熱回落</td></tr>
+<tr><td>4720</td><td>德淵</td><td>-3.72</td><td>true</td><td>1.81</td><td>13.77</td><td>1</td><td>3,618,000</td><td>量價背離、過熱回落</td></tr>
+<tr><td>2301</td><td>光寶科</td><td>-3.19</td><td>false</td><td>1.62</td><td>-0.61</td><td>2</td><td>2,790,452</td><td>量價背離、籌碼轉弱</td></tr>
+<tr><td>2388</td><td>威盛</td><td>-2.54</td><td>true</td><td>1.60</td><td>-3.67</td><td>2</td><td>14,367,000</td><td>量價背離、籌碼轉弱</td></tr>
+<tr><td>2329</td><td>華泰</td><td>-0.90</td><td>true</td><td>1.59</td><td>-1.42</td><td>2</td><td>38,847,000</td><td>量價背離、籌碼轉弱</td></tr>
+</tbody></table>
+<p>說明幾點：<code>收黑</code> 的定義是收盤 &lt; 開盤，與漲跌幅正負無關。國喬（+5.94%）、康那香（+3.73%）都是漲幅為正但收盤仍低於開盤，屬於「開高走低但收紅卻收黑」的典型案例，命中過熱回落是因為收黑成立，並非漲幅轉負。反過來，龍德造船、所羅門、光寶科雖然當日漲跌幅為負，但 <code>收黑</code> 為 false（開低走高，收盤未低於開盤），所以未命中「過熱回落」，只命中「量價背離」與「籌碼轉弱」。</p>
+<p>9919 康那香的 <code>可當沖先賣後買</code> 欄位為資料未取得，無法確認是否可先賣後買，其餘 14 檔皆為 true。文曄（融券餘額 48,192,838 股）與國喬（47,335,667 股）融券水位偏高，若股價反彈須留意軋空風險。</p>
+<p>本清單僅代表今日符合篩選條件，未經回測、不含預期報酬。</p>
+<h2>10. 一句話總結</h2>
+<p>指數收平但外資現貨大舉賣超台積電等電子權值股，金融航運撐盤使廣度偏多，期貨部位未明確表態，融資連 3 日逆勢增須留意斷頭風險。</p>
+<p class='note'>本報告由程式自動彙整公開數據生成，非投資建議。數據若與交易所公告不符，以交易所為準。</p>
+
+  <footer>資料來源：TWSE／TPEx／TAIFEX 公開資料、Yahoo Finance。自動產生，未經人工覆核。</footer>
+</div>
+</body>
+</html>
