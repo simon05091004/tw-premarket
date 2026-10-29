@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>台股盤前 · 2026-10-29</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#15171C">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="台股">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Serif+TC:wght@400;600&family=Noto+Sans+TC:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper:#FCFCFA; --ink:#15171C; --muted:#71757E; --rule:#E4E3DE;
+    --up:#C8322B; --down:#0E7A52;
+    --mono:"IBM Plex Mono","Noto Sans TC",monospace;
+    --serif:"Noto Serif TC",Georgia,serif;
+    --sans:"Noto Sans TC",system-ui,sans-serif;
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:var(--serif); line-height:1.75;
+    -webkit-text-size-adjust:100%;
+  }
+  .wrap { max-width:44rem; margin:0 auto; padding:2rem 1.25rem 4rem; }
+
+  /* ---- 報頭 ---- */
+  header { border-bottom:2px solid var(--ink); padding-bottom:.75rem; }
+  .switch { margin-top:.6rem; font-family:var(--sans); font-size:.8rem; }
+  .switch a {
+    display:inline-block; padding:.35rem .7rem; border:1px solid var(--rule);
+    border-radius:999px; color:var(--muted); text-decoration:none;
+  }
+  .switch a:active { background:var(--ink); color:var(--paper); }
+  .eyebrow {
+    font-family:var(--mono); font-size:.7rem; letter-spacing:.18em;
+    text-transform:uppercase; color:var(--muted);
+  }
+  h1 {
+    font-family:var(--mono); font-weight:600; font-size:1.6rem;
+    letter-spacing:-.01em; margin:.35rem 0 .1rem;
+  }
+  .sub { font-family:var(--mono); font-size:.78rem; color:var(--muted); }
+
+  /* ---- 簽名：夜間軌跡 ---- */
+  .track {
+    list-style:none; margin:1.5rem 0 2rem; padding:0;
+    display:grid; grid-template-columns:repeat(5,1fr); gap:0;
+    border-top:1px solid var(--rule); border-bottom:1px solid var(--rule);
+  }
+  .track li {
+    padding:.7rem .4rem; text-align:center; position:relative;
+    font-family:var(--mono);
+  }
+  .track li + li { border-left:1px solid var(--rule); }
+  .track .t { display:block; font-size:.68rem; color:var(--muted); letter-spacing:.06em; }
+  .track .lb { display:block; font-size:.72rem; margin:.15rem 0; font-family:var(--sans); }
+  .track .v { display:block; font-size:.8rem; font-weight:600; min-height:1.2em; }
+  .track .now { background:var(--ink); }
+  .track .now .t, .track .now .lb { color:#C9CBD1; }
+  .track .now .v { color:#FFF; }
+  .track .now .v.up { color:#FF8A80; }
+  .track .now .v.down { color:#6EE7B7; }
+
+  /* ---- 數據表 ---- */
+  table {
+    width:100%; border-collapse:collapse; margin:.75rem 0 1.5rem;
+    font-family:var(--mono); font-size:.84rem;
+    font-variant-numeric:tabular-nums;
+  }
+  th, td { padding:.4rem .5rem; border-bottom:1px solid var(--rule); text-align:left; }
+  thead th {
+    font-size:.68rem; letter-spacing:.1em; text-transform:uppercase;
+    color:var(--muted); font-weight:500; border-bottom:1px solid var(--ink);
+  }
+  tbody th { font-weight:500; font-family:var(--sans); }
+  .num { text-align:right; }
+  .up { color:var(--up); }
+  .down { color:var(--down); }
+  .flat { color:var(--muted); }
+
+  /* ---- 內文 ---- */
+  h2 {
+    font-family:var(--mono); font-size:.95rem; font-weight:600;
+    margin:2.25rem 0 .5rem; padding-top:.5rem;
+    border-top:1px solid var(--rule); letter-spacing:.01em;
+  }
+  h3 { font-family:var(--sans); font-size:.9rem; margin:1.25rem 0 .35rem; }
+  p { margin:.6rem 0; font-size:.95rem; }
+  ul { margin:.6rem 0; padding-left:1.1rem; }
+  li { margin:.3rem 0; font-size:.95rem; }
+  strong { font-weight:600; }
+  code { font-family:var(--mono); font-size:.86em; background:#F0EFEA; padding:.05em .3em; }
+  .note {
+    font-family:var(--sans); font-size:.78rem; color:var(--muted);
+    border-left:2px solid var(--rule); padding-left:.75rem; margin-top:2rem;
+  }
+  .missing {
+    font-family:var(--mono); font-size:.75rem; color:var(--down);
+    border:1px solid var(--rule); padding:.6rem .75rem; margin:1rem 0;
+  }
+  footer {
+    margin-top:3rem; padding-top:1rem; border-top:1px solid var(--rule);
+    font-family:var(--mono); font-size:.7rem; color:var(--muted);
+  }
+  @media (max-width:30rem) {
+    .track { grid-template-columns:repeat(3,1fr); }
+    .track li:nth-child(4) { border-left:none; }
+    h1 { font-size:1.3rem; }
+  }
+  @media (prefers-reduced-motion:no-preference) {
+    .wrap { animation:fade .4s ease-out; }
+    @keyframes fade { from { opacity:0; transform:translateY(4px); } to { opacity:1; } }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">台股盤前 · Pre-market</div>
+    <h1>2026-10-29</h1>
+    <div class="sub">產生於 2026-10-29 09:58 · 前一交易日 2026-10-28</div>
+    <div class="switch"><a href="latest-postmarket.html">看最新盤後籌碼 →</a></div>
+  </header>
+
+  <script>
+    // 註冊失敗（例如用 file:// 開啟）不影響閱讀，靜默略過即可
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("sw.js").catch(function () {});
+      });
+    }
+  </script>
+
+  <ol class='track'><li class=''><span class='t'>10-28 13:30</span><span class='lb'>台股收盤</span><span class='v flat'>47,036</span></li><li class=''><span class='t'>10-28 15:00</span><span class='lb'>夜盤開始</span><span class='v flat'></span></li><li class=''><span class='t'>10-28</span><span class='lb'>美股收盤</span><span class='v up'>費半 +1.75%</span></li><li class=''><span class='t'>10-29 05:00</span><span class='lb'>夜盤結束</span><span class='v flat'>47,121</span></li><li class='now'><span class='t'>10-29 07:00</span><span class='lb'>現在</span><span class='v down'>夜盤 -123</span></li></ol>
+
+  <h2>國際盤數據</h2>
+  <table>
+    <thead><tr><th>指數／標的</th><th class="num">收盤</th><th class="num">漲跌</th></tr></thead>
+    <tbody><tr><th>道瓊</th><td class='num'>52,475.10</td><td class='num up'>+0.19%</td></tr><tr><th>那斯達克</th><td class='num'>26,549.85</td><td class='num up'>+0.27%</td></tr><tr><th>標普500</th><td class='num'>7,743.98</td><td class='num up'>+0.28%</td></tr><tr><th>費城半導體</th><td class='num'>11,684.00</td><td class='num up'>+1.75%</td></tr><tr><th>台積電ADR</th><td class='num'>439.51</td><td class='num up'>+0.60%</td></tr><tr><th>聯電ADR</th><td class='num'>18.82</td><td class='num down'>-3.24%</td></tr><tr><th>日月光ADR</th><td class='num'>43.92</td><td class='num up'>+4.42%</td></tr><tr><th>VIX</th><td class='num'>16.91</td><td class='num down'>-3.48%</td></tr><tr><th>WTI原油</th><td class='num'>102.14</td><td class='num up'>+2.24%</td></tr><tr><th>美債10年殖利率</th><td class='num'>5.05</td><td class='num up'>+1.04%</td></tr><tr><th>美元兌台幣</th><td class='num'>32.42</td><td class='num flat'>-0.00%</td></tr><tr><th>日經225</th><td class='num'>64,239.07</td><td class='num up'>+0.45%</td></tr><tr><th>韓國KOSPI</th><td class='num'>5,882.81</td><td class='num down'>-2.16%</td></tr></tbody>
+  </table>
+
+  
+
+  <h2>1. 昨夜關鍵</h2>
+<p>美股三大指數同步小漲：道瓊 +0.19%、那斯達克 +0.27%、標普500 +0.28%，費半大漲 1.75%，明顯跑贏大盤三指數，呈現科技股／半導體單獨走強的格局。盤中走勢上，道瓊開盤即為當日低點後走高、尾盤略收斂；那斯達克與標普皆是先探低（那指低點 26414.92、標普低點 7718.37）後拉回收漲；費半同樣開低走高，由低點 11488.36 大幅拉升至收盤 11684，接近盤中高點，動能偏強。VIX 收 16.91，仍處中性區間（15–20），較前一交易日下跌 3.48%，跌幅已達可用「大幅」的門檻，顯示恐慌情緒降溫，但注意絕對水位仍在中性而非低檔。台積電 ADR 收 439.51，上漲 0.6%，屬小幅上漲，對台股開盤是正向但力道有限的訊號。</p>
+<h2>2. 夜盤與期現價差</h2>
+<table><thead><tr>
+<th>項目</th>
+<th>數值</th>
+</tr></thead><tbody>
+<tr><td>日盤台指期收盤</td><td>47244</td></tr>
+<tr><td>日盤期現價差</td><td>+208.42（正價差）</td></tr>
+<tr><td>夜盤台指期收盤</td><td>47121</td></tr>
+<tr><td>夜盤較日盤收盤漲跌點／%</td><td>-123 點／-0.26%</td></tr>
+<tr><td>夜盤相對現貨昨收偏離</td><td>+85.42 點</td></tr>
+</tbody></table>
+<p>日盤期現價差由前一交易日的 -15.23（逆價差）轉為今日 +208.42（正價差），方向上轉為正價差，顯示期貨端空頭回補、多方較積極。夜盤較日盤收盤跌 0.26%，幅度低於 0.3% 門檻，屬持平／變化有限，不構成方向性訊號。夜盤相對現貨昨收偏離 +85.42 點，僅作為開盤跳空參考，不可解讀為期現價差。</p>
+<h2>3. 台積電 ADR：對現貨的增量資訊</h2>
+<p>ADR 溢價偏離基準 +5.66pp，高於偏離門檻（2.65pp），判定為「高於基準（ADR 相對現貨轉強）」，基準樣本數高（31 日），可信度足夠。</p>
+<p>三腳拆解：台積電 ADR 漲 0.6%，美元兌台幣漲跌 -0.0%（匯率幾乎無變動），台積電現貨漲 1.04%，三者合成的 ADR 減現貨報酬差為 -0.44%，代表 ADR 這次反而比現貨少漲，境外盤對台積電的反應不如台股本身積極。</p>
+<p>由於偏離幅度過門檻，可換算指數點數：台積電隱含現貨開盤變動 +5.06%，隱含指數影響 +713.7 點（以台積電指數權重 30%、此為參數假設值而非當日實測計算），但實際可解釋夜盤跌點比例為 -580.2%，歸因判定為「台積電無法解釋夜盤變動，壓力來自其他成分股」。換言之，台積電本身的訊號是正向的，但夜盤整體僅微幅變動，落差來自非台積電成分股，這才是本節真正要留意的部分。</p>
+<h2>4. 籌碼</h2>
+<p>外資現貨買超 159.57 億（動作判定：買超），投信現貨買超 143.2 億（動作判定：買超），兩者皆過 50 億門檻。期貨方面，外資淨未平倉 -84917 口，較前日增 1126 口（+1.33%），判定「減空（回補）」；投信淨未平倉 87179 口，增 2127 口（+2.44%），判定「加多」；自營商淨未平倉僅 483 口，判定「減多」。外資現貨期貨組合判定為「現貨買超＋期貨減空（回補）」，現貨與期貨方向一致，顯示外資偏積極偏多，而非單純參與反彈卻避險。</p>
+<p>外資台指期淨未平倉水位百分位 30.6，水位分級回到「常態區間」（前一日為「淨空偏高」）。此為結構性部位（避險／套利／選擇權對沖），水位本身不代表方向觀點，不宜與投信多單部位做鏡像解讀。</p>
+<p>融資餘額 6323 億，較前日增 89.13 億（+1.43%），動作判定「增加」。觀察起點（2026-08-05，非本波低點）以來，融資餘額累計變化 +21.33%，指數同期變化 +8.48%，槓桿判定為「指數上漲、融資增幅大於指數（槓桿膨脹）」，顯示槓桿隨漲勢持續擴張。</p>
+<h2>5. 櫃買 vs 上市</h2>
+<p>櫃買漲 4.06%，加權漲 2.04%，櫃買相對加權強弱 +2.02pp，過 0.5pp 門檻，判定「櫃買相對強（資金留在中小型股，偏類股輪動）」。近 5 日累計仍為 -1.13pp（樣本僅 6 日），顯示今日是單日轉強而非延續性分化。櫃買上市成交值比升至 0.217（前一日 0.17），資金風險偏好回升。開盤觀察重點：若櫃買持續撐住，代表這波是類股輪動而非結構性轉弱。</p>
+<h2>6. 關鍵價位</h2>
+<table><thead><tr>
+<th>均線</th>
+<th>乖離率</th>
+</tr></thead><tbody>
+<tr><td>5 日線</td><td>+1.22%</td></tr>
+<tr><td>10 日線</td><td>+0.03%</td></tr>
+<tr><td>20 日線</td><td>-1.87%</td></tr>
+</tbody></table>
+<p>指數站上 5 日線與 10 日線（10 日線幾乎貼合），但仍在 20 日線下方。距近 20 日高點（49968.92）尚差 6.24%，距近 20 日低點（45676.67）已高出 2.89%。上檔壓力看 20 日均線 47930.33，下檔支撐看 10 日均線 47022.43（緊貼現價）與 5 日均線 46470.79。短天期乖離仍溫和，尚未出現急拉後的過大乖離風險。</p>
+<h2>7. 今日開盤推估與盤面預期</h2>
+<p>以夜盤台指期收盤 47121 為主要依據，較日盤僅變化 -0.26%，屬持平，不構成明確方向訊號；但夜盤相對現貨昨收（47035.58）仍偏高 85.42 點，開盤參考略偏開高。費半大漲、台積電現貨與 ADR 均走強，籌碼面外資現貨買超、期貨回補、投信加碼，方向偏多。最大變數在於台積電歸因判定顯示「壓力來自其他成分股」，若非權值股族群未能跟上，指數上方 20 日線（47930 附近）的乖離收斂速度會放緩，開盤後需觀察櫃買是否同步走強以確認是類股輪動還是全面性買盤。</p>
+<h2>8. 一句話總結</h2>
+<p>外資現貨期貨同步轉多、槓桿持續膨脹，指數站上月線下方關卡前，權值股以外的族群能否跟上是今日觀察重點。</p>
+<p class='note'>本報告由程式自動彙整公開數據生成，非投資建議。數據若與交易所公告不符，以交易所為準。</p>
+
+  <footer>資料來源：TWSE／TPEx／TAIFEX 公開資料、Yahoo Finance。自動產生，未經人工覆核。</footer>
+</div>
+</body>
+</html>
