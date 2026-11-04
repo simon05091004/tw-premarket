@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -23,6 +24,13 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+# 測試裡的失敗情境大多會走到 emit_error，而它在 GITHUB_ACTIONS=true 時會印出
+# ::error::，於是 Actions 把那些假訊息全當成真的錯誤掛在 run 頁面上 ——
+# 2026-11-04 盤前那次 7 個 error 裡有 5 個是測試夾具，真正的「額度不足」
+# 反而被埋在中間。那個 annotation 功能本來就是為了讓真錯誤顯眼，不該自己製造雜訊。
+# 需要驗證 annotation 的測試會自己用 patch.dict 把這個變數設回來。
+os.environ.pop("GITHUB_ACTIONS", None)
 
 from premarket import analyze, fetch, main as main_mod  # noqa: E402
 
