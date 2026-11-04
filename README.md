@@ -49,6 +49,20 @@ open docs/index.html
    Workflow permissions → 選「Read and write permissions」。
    （沒開這個，最後那步 `git push` 會 403。）
 5. 到 Actions 分頁手動觸發一次 `台股盤前分析` 確認能跑。
+6. **（選用）接 Telegram 推播**：報告發布後把摘要推到手機，產出失敗時也會通知。
+   - BotFather 輸入 `/newbot` 建一個 bot（名稱例如「台股每日報告」），複製它給的 token
+   - 先打開那個 bot 按「開始」，再用瀏覽器開
+     `https://api.telegram.org/bot<你的token>/getUpdates`，
+     找 `"chat":{"id":` 後面那串數字
+   - 加兩個 secret：`TELEGRAM_BOT_TOKEN`、`TELEGRAM_CHAT_ID`
+   - 另外加一個 **variable**（Variables 分頁，不是 secret）`PAGES_URL`，
+     值是你的 Pages 網址 —— 「看完整報告」按鈕才會連到當天那一份；
+     沒設的話按鈕退回連到 repo 裡的 `.md`，仍然看得到內容
+   - 想驗證：手動 Run workflow（**不要勾 force**）。報告已存在時不會重新產生，
+     但會把最新一份重送一次，不花 API 費用
+
+   兩個 secret 沒設就自動略過，workflow 不會因此變紅（fork 的人不受影響）。
+   LINE 與 Telegram 各自獨立，一邊的權杖過期不會擋住另一邊。
 
 網址會是 `https://<帳號>.github.io/<repo>/`。加到手機主畫面就是一個 App。
 
@@ -74,6 +88,7 @@ premarket/
   analyze.py    呼叫 Anthropic API
   render.py     產生 HTML（手機優先，紅漲綠跌）
   main.py       主流程：判斷交易日 → 抓 → 分析 → 輸出
+  notify_telegram.py  把報告的「一句話總結」與推估段落推到手機（只用標準庫）
 prompts/
   premarket_system.md   ★ 這個檔案比程式碼重要，見下節
 docs/
@@ -131,7 +146,8 @@ TAIFEX 的欄位名（例如「未沖銷契約數」）偶爾會改，
 
 1. **16:00 籌碼完整版** —— 三大法人與期貨未平倉當日 15:00 後才公布，
    這份的資訊量比 13:40 的量價快報大得多
-2. **推播** —— GitHub Pages 要主動打開；接 LINE Notify 或 Telegram Bot 會實用很多
+2. ~~**推播**~~ —— 已完成：LINE 廣播（一行連結）＋ Telegram（摘要與按鈕，
+   含失敗警告），兩邊獨立，見 `premarket/notify_telegram.py`
 3. **13:45 盤後快報** —— 我會擺最後，因為它能講的只有量價，
    而量價你自己看一眼 K 線圖比讀報告快
 
