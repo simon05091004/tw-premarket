@@ -65,6 +65,7 @@ jobs:
           python -m premarket.main "${ARGS[@]}"
 
       - name: 推回 repo
+        id: push
         run: |
           git config user.name  "premarket-bot"
           git config user.email "premarket-bot@users.noreply.github.com"
@@ -75,11 +76,65 @@ jobs:
           git pull --rebase
           git push
 
+      # Telegram 失敗警告。擺在兩個推播步驟之前：有步驟失敗之後，後面的步驟
+      # 不會自動執行，這步是靠 failure()／cancelled() 自己跑起來的。放在 LINE
+      # 之後的話，LINE 權杖過期（exit 1）也會被當成「報告沒發布」而誤報。
+      - name: Telegram 失敗警告
+        if: (failure() || cancelled()) && env.TELEGRAM_BOT_TOKEN != ''
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          # 四種失敗的下一步不一樣，訊息要講對是哪一種 ——「程式掛了」和
+          # 「超時被砍」在 Actions 上一樣紅，但前者要改程式、後者要調 timeout。
+          GEN="${{ steps.gen.outcome }}"
+          PUSH="${{ steps.push.outcome }}"
+          if [ "$GEN" = "cancelled" ] || [ "$PUSH" = "cancelled" ]; then
+            R="執行被中止（超過 timeout 或被手動取消），報告沒有發布。"
+          elif [ "$GEN" = "failure" ]; then
+            R="分析產出失敗，報告沒有發布。原因看執行紀錄最上方那行紅字。"
+          elif [ "$GEN" = "skipped" ]; then
+            R="測試沒過，這次刻意不產生報告（壞掉的程式不該產出報告）。"
+          elif [ "$PUSH" = "failure" ]; then
+            R="報告已產出，但推回 repo 失敗，網頁沒有更新。"
+          else
+            R="執行失敗，報告可能沒有發布。"
+          fi
+          # 用 python3 而非 python：這步可能在 setup-python／pip install 掛掉之後
+          # 才執行。notify_telegram 只用標準庫，系統 python 就跑得起來。
+          python3 -m premarket.notify_telegram --session postmarket --failure \
+            --reason "$R" \
+            --date "${{ steps.gen.outputs.report_date }}" \
+            --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      # Telegram 推播。摘要（一句話總結 + 明日觀察重點）直接寫在訊息裡，手機通知欄
+      # 就看得完，連結留給想看全文的時候。
+      # 和 LINE 完全獨立：一邊的權杖過期不會擋住另一邊。
+      # 條件看 push 的結果而不是 success()：要的是「報告真的上去了」。
+      # 手動觸發時即使 gen 因「報告已存在」而略過，也重送最新一份（不花 API 費用）。
+      - name: Telegram 推播
+        if: >-
+          always() && steps.push.outcome == 'success' &&
+          env.TELEGRAM_BOT_TOKEN != '' &&
+          (steps.gen.outputs.skipped != 'true' || github.event_name == 'workflow_dispatch')
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          PAGES_URL: ${{ vars.PAGES_URL }}
+        run: |
+          # 日期留空時腳本自己找最新一份 —— 手動補送走的就是這條。
+          python3 -m premarket.notify_telegram --session postmarket \
+            --date "${{ steps.gen.outputs.report_date }}"
+
       # LINE 通知。沒設 secret 的人（例如 fork 的人）自動略過，不會讓 workflow 失敗。
       # 用 broadcast 而非 push：不需要知道自己的 userId，發給所有加好友的人即可。
       # skipped 是備援排程那次：報告早就發過了，再廣播一次等於騷擾訂閱者。
       - name: LINE 通知
-        if: success() && env.LINE_TOKEN != '' && steps.gen.outputs.skipped != 'true'
+        # 不再用 success()：Telegram 那步失敗（權杖過期會 exit 1）不該連帶
+        # 讓 LINE 也不送。兩邊各自獨立，只看報告有沒有真的 push 上去。
+        if: >-
+          always() && steps.push.outcome == 'success' &&
+          env.LINE_TOKEN != '' && steps.gen.outputs.skipped != 'true'
         env:
           LINE_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           PAGES_URL: ${{ vars.PAGES_URL }}
