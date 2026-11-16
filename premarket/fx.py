@@ -1,5 +1,5 @@
 """
-外匯追蹤：臺灣銀行、玉山銀行牌告（現鈔／即期）＋國際市場中價 → 價差、偏離、套利路徑。
+外匯追蹤：玉山、台新、臺灣銀行牌告（現鈔／即期）＋國際市場中價 → 價差、偏離、套利路徑。
 
     python -m premarket.fx              # 抓一次，寫 docs/data/fx/
     python -m premarket.fx --dry-run    # 只抓、只印，不寫檔
@@ -47,11 +47,13 @@ TPE = timezone(timedelta(hours=8))
 
 FOREIGN = ("USD", "JPY", "EUR")
 FIELDS = ("cash_buy", "cash_sell", "spot_buy", "spot_sell")
-SOURCE_NAMES = {"bot": "臺灣銀行", "esun": "玉山銀行"}
+SOURCE_NAMES = {"bot": "臺灣銀行", "esun": "玉山銀行", "taishin": "台新銀行"}
 CCY_NAMES = {"TWD": "台幣", "USD": "美元", "JPY": "日圓", "EUR": "歐元"}
 
 BOT_CSV = "https://rate.bot.com.tw/xrt/flcsv/0/day"
 ESUN_API = "https://www.esunbank.com/api/client/ExchangeRate/LastRateInfo"
+# 台新「即時匯率」頁用 <script src> 引入的匯出檔：一串 document.writeln()，把牌告表格寫進網頁。
+TAISHIN_EXPORT = "https://www.taishinbank.com.tw/eServiceA/transactionrate/transactionrateExport.jsp?no=5"
 # 向 Yahoo 抓的四個；JPYTWD、EURTWD 由它們合成（見 fetch_market）。
 YAHOO_SYMBOLS = ("USDTWD", "USDJPY", "EURUSD", "EURJPY")
 # 前三個是「一單位外幣值多少台幣」，用來對牌告；後三個是交叉盤，用來對牌告隱含的交叉匯率。
@@ -72,7 +74,7 @@ HEARTBEAT_MIN = 55
 DEFAULT_CONFIG: dict[str, Any] = {
     # 要抓哪幾家。臺銀（"bot"）對機房 IP 回驗證頁，GitHub Actions 上抓不到，
     # 所以預設不抓；在自己的電腦上跑的話可以加回來。
-    "sources": ["esun"],
+    "sources": ["esun", "taishin"],
     # {"bot": {"USD": 0.03}}：網銀讓分，每單位外幣讓幾元台幣。
     # 玉山的 API 自己會帶當下的網銀優惠，這裡有寫才會蓋掉它（寫 0 = 不套用優惠）。
     "discount": {},
@@ -197,7 +199,67 @@ def fetch_esun() -> dict | None:
     return _fetch("POST", ESUN_API, parse, json={})
 
 
-FETCHERS = {"bot": fetch_bot, "esun": fetch_esun}
+_TAISHIN_FIELDS = {"即期買入": "spot_buy", "即期賣出": "spot_sell", "現鈔買入": "cash_buy", "現鈔賣出": "cash_sell"}
+
+
+def parse_taishin(js: str) -> dict:
+    """
+    台新的牌告匯出檔 → {"quotes": {...}, "board_time": ISO}
+
+    內容是一行一行的 document.writeln('…')，接起來是一段 HTML，中文用 \\uXXXX 表示。
+    裡面同一個幣別出現三次：桌機版一張四欄的表，手機版即期、現鈔各一張兩欄的表。
+    只讀桌機版那張，每一列長這樣：
+        <td class="currency">32.8650<br><label class="highest">近30日最高</label></td>
+        … 共四格 …
+        <td><a onclick="queryhistory('USD')">查詢</a></td>
+    幣別從 queryhistory('USD') 取，四格對到哪個欄位看表頭那一列的文字（不寫死順序）。
+    每一格只認第一個詞：後面可能跟著「近30日最高」這種標籤，沒掛牌的是 "-"。
+    """
+    lines = re.findall(r"document\.writeln\('(.*)'\);", js)
+    if not lines:
+        raise ChallengeError("台新回傳的不是牌告匯出檔")
+    html = "\n".join(lines).replace('\\"', '"').replace("\\/", "/").replace("\\'", "'")
+    html = re.sub(r"\\u([0-9a-fA-F]{4})", lambda m: chr(int(m.group(1), 16)), html)
+
+    def cell_text(s: str) -> str:
+        return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", s)).strip()
+
+    fields: list[str] | None = None
+    quotes: dict[str, dict] = {}
+    for row in re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S):
+        if fields is None:
+            labels = [cell_text(c) for c in re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)]
+            got = [_TAISHIN_FIELDS[x] for x in labels if x in _TAISHIN_FIELDS]
+            if len(got) == 4:
+                fields = got
+            continue
+        m = re.search(r"queryhistory\('([A-Z]{3})'\)", row)
+        cells = re.findall(r'<td class="currency"[^>]*>(.*?)</td>', row, re.S)
+        if not m or m.group(1) not in FOREIGN or len(cells) != len(fields) or m.group(1) in quotes:
+            continue
+        q = {f: _pos((cell_text(c).split() or [""])[0]) for f, c in zip(fields, cells)}
+        if q["spot_buy"] or q["cash_buy"]:
+            quotes[m.group(1)] = {k: q[k] for k in FIELDS}
+    if not quotes:
+        raise ValueError("台新的匯出檔裡找不到 USD/JPY/EUR 的牌告列")
+
+    board = None
+    t = re.search(r"更新時間\s*[:：]\s*(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2})", html)
+    if t:
+        board = datetime.strptime(t.group(1), "%Y/%m/%d %H:%M:%S").replace(tzinfo=TPE).isoformat()
+    return {"quotes": quotes, "board_time": board}
+
+
+def fetch_taishin() -> dict | None:
+    def parse(r: requests.Response) -> dict:
+        r.encoding = "utf-8"
+        return parse_taishin(r.text)
+
+    # 台新的站台有一部分連線會在 TLS 交握時被重設（實測約三成），靠 _fetch 的重試吸收。
+    return _fetch("GET", TAISHIN_EXPORT, parse)
+
+
+FETCHERS = {"bot": fetch_bot, "esun": fetch_esun, "taishin": fetch_taishin}
 
 
 def fetch_market() -> dict[str, dict]:

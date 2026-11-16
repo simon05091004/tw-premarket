@@ -304,9 +304,9 @@ python tools/check_bus_page.py --shots /tmp/shots   # 順便截圖
 
 ## 十一、外匯追蹤（`docs/fx.html`）
 
-追蹤銀行的 **美元、日圓、歐元兌台幣** 現鈔與即期牌告（排程自動抓玉山銀行，
-其他銀行在頁面手動輸入），對照國際市場中價，算出價差、牌告偏離與每一條
-換匯路徑（含跨行）的成本。不呼叫模型，不花 API 費用。
+追蹤銀行的 **美元、日圓、歐元兌台幣** 現鈔與即期牌告（排程自動抓玉山銀行與
+台新銀行，其他銀行在頁面手動輸入），對照國際市場中價，算出價差、牌告偏離與
+每一條換匯路徑（含跨行）的成本。不呼叫模型，不花 API 費用。
 
 網址：`https://<帳號>.github.io/<repo>/fx.html`（加 `?demo` 看示範資料）
 
@@ -348,7 +348,8 @@ python -m premarket.fx              # 寫 docs/data/fx/latest.json 與 history.j
 
 | 來源 | 內容 | 注意 |
 |---|---|---|
-| 玉山銀行牌告 API（`www.esunbank.com/api/client/ExchangeRate/LastRateInfo`，POST） | 現鈔買入／賣出、即期買入／賣出，另外帶網銀／App 的優惠讓分 | 排程預設抓這一家。GitHub Actions 上實測抓得到 |
+| 玉山銀行牌告 API（`www.esunbank.com/api/client/ExchangeRate/LastRateInfo`，POST） | 現鈔買入／賣出、即期買入／賣出，另外帶網銀／App 的優惠讓分 | 排程預設抓。GitHub Actions 上實測抓得到 |
+| 台新銀行牌告匯出檔（`www.taishinbank.com.tw/eServiceA/transactionrate/transactionrateExport.jsp?no=5`） | 現鈔買入／賣出、即期買入／賣出、更新時間 | 排程預設抓。就是「即時匯率」頁用 `<script>` 引入的那支；連線偶爾被重設，靠重試吸收。沒有公布網銀優惠，要自己在讓分裡填 |
 | 臺灣銀行牌告 CSV（`rate.bot.com.tw/xrt/flcsv/0/day`） | 現鈔買入／賣出、即期買入／賣出 | **GitHub 上抓不到，預設不抓**，見下方 |
 | Yahoo Finance（yfinance，1 分鐘線） | USD/TWD、USD/JPY、EUR/USD、EUR/JPY 中價 | 參考價，不是可成交價 |
 
@@ -386,8 +387,8 @@ Actions 的執行記錄會出現黃色警告。
 
 ```json
 {
-  "sources": ["esun"],
-  "discount": { "esun": { "USD": 0.03, "JPY": 0.001 } },
+  "sources": ["esun", "taishin"],
+  "discount": { "taishin": { "USD": 0.03, "JPY": 0.001 } },
   "alerts": [
     { "ccy": "JPY", "field": "spot_sell", "op": "<=", "value": 0.2000 },
     { "ccy": "USD", "field": "spot_buy",  "op": ">=", "value": 33.5 }
@@ -397,8 +398,8 @@ Actions 的執行記錄會出現黃色警告。
 }
 ```
 
-- `sources` — 要抓哪幾家。`esun` 玉山銀行（預設）；`bot` 臺灣銀行在 GitHub 上
-  抓不到，只有在自己的電腦上跑才加。
+- `sources` — 要抓哪幾家。`esun` 玉山銀行、`taishin` 台新銀行（預設這兩家）；
+  `bot` 臺灣銀行在 GitHub 上抓不到，只有在自己的電腦上跑才加。
 - `discount` — 網銀換匯的讓分，每 1 外幣讓幾元台幣，只套用在即期。玉山沒寫的
   幣別用銀行自己公布的優惠，有寫就以這裡為準。頁面上也能改（存在瀏覽器裡，
   優先於這裡的值）。歷史檔存的永遠是原始牌告。
@@ -425,7 +426,7 @@ Actions 的執行記錄會出現黃色警告。
 ### 自動檢查
 
 ```bash
-python -m unittest tests.test_fx      # 38 項：解析、路徑搜尋、偏離、歷史、提醒
+python -m unittest tests.test_fx      # 45 項：解析、路徑搜尋、偏離、歷史、提醒
 python tools/check_fx_page.py         # 49 項：在真的 Chromium 裡跑頁面
 ```
 
@@ -435,8 +436,8 @@ Python 版，比對兩邊的最佳路徑；改了一邊忘了另一邊，這裡�
 
 ### 已知限制
 
-- **排程自動抓的只有玉山銀行一家。** 單一銀行不會出現正的套利值；跨行比價
-  目前靠頁面手動輸入另一家的報價，而手動輸入的報價不會更新、也不會觸發提醒。
+- **排程自動抓的是玉山與台新兩家。** 其他銀行靠頁面手動輸入，而手動輸入的
+  報價不會更新、也不會觸發提醒。某一輪只抓到一家時，那一輪不會有正的套利值。
   要再接一家抓得到的銀行，在 `fx.py` 加一個回傳
   `{"quotes", "board_time", "bonus"}` 的 `fetch_xxx()`，登記進 `FETCHERS` 與
   `SOURCE_NAMES`，再把代號加進 `fx_config.json` 的 `sources`。先用一般請求確認

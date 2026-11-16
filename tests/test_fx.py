@@ -3,7 +3,7 @@
     python -m unittest tests.test_fx
 
 不連網。臺銀的 CSV 範例是照牌告檔的版面手寫的（數字是編的），
-不是從線上抓回來的原檔；玉山的樣本則是真實回應。
+不是從線上抓回來的原檔；玉山與台新的樣本則是真實回應。
 """
 
 import copy
@@ -15,6 +15,8 @@ from premarket import fx
 
 # 玉山的樣本是從線上真實回應裁下來的（2026-11-16 晚上），只留用得到的欄位。
 ESUN_RAW = json.loads((Path(__file__).parent / "fixtures" / "esun_rates.json").read_text(encoding="utf-8"))
+# 台新的樣本是線上真實回應的原檔（2026-11-17 清晨），沒有裁剪。
+TAISHIN_JS = (Path(__file__).parent / "fixtures" / "taishin_export.js").read_text(encoding="utf-8")
 
 HEADER = (
     "幣別,匯率,現金,即期,遠期10天,遠期30天,遠期60天,遠期90天,遠期120天,遠期150天,遠期180天,"
@@ -115,6 +117,75 @@ class EsunTest(unittest.TestCase):
         self.assertAlmostEqual(q["spot_sell"], 32.949)  # = SellDecreaseRate
 
 
+class TaishinTest(unittest.TestCase):
+    def test_real_response(self):
+        got = fx.parse_taishin(TAISHIN_JS)
+        self.assertEqual(set(got["quotes"]), {"USD", "JPY", "EUR"})
+        self.assertEqual(
+            got["quotes"]["USD"],
+            {"cash_buy": 32.663, "cash_sell": 33.14, "spot_buy": 32.865, "spot_sell": 32.965},
+        )
+        # 這兩格在原檔裡後面跟著「近7日最高」的標籤，標籤裡的 7 不能被當成匯率
+        self.assertEqual(got["quotes"]["JPY"]["spot_buy"], 0.2044)
+        self.assertEqual(got["quotes"]["JPY"]["cash_buy"], 0.2024)
+        self.assertEqual(
+            got["quotes"]["EUR"],
+            {"cash_buy": 35.685, "cash_sell": 36.701, "spot_buy": 36.018, "spot_sell": 36.368},
+        )
+        self.assertEqual(got["board_time"], "2026-11-17T05:37:56+08:00")
+
+    def test_every_quote_is_a_sane_two_sided_market(self):
+        for ccy, q in fx.parse_taishin(TAISHIN_JS)["quotes"].items():
+            self.assertLess(q["cash_buy"], q["spot_buy"], ccy)
+            self.assertLess(q["spot_buy"], q["spot_sell"], ccy)
+            self.assertLess(q["spot_sell"], q["cash_sell"], ccy)
+
+    @staticmethod
+    def export(rows: str, header: str = "即期買入,即期賣出,現鈔買入,現鈔賣出") -> str:
+        """照原檔的寫法組一份小的匯出檔：每行一個 document.writeln，引號與斜線有跳脫。"""
+        html = ["<p>更新時間 : 2026/11/17 10:15:00</p>", '<table class="right">', "<tr>"]
+        html += [f"<td>{h}</td>" for h in header.split(",")] + ["</tr>"]
+        for line in rows.strip().splitlines():
+            ccy, *vals = line.split(",")
+            html.append("<tr>")
+            html += [f'<td class="currency">{v}</td>' for v in vals]
+            html += [f"<td><a onclick=\"queryhistory('{ccy}')\">查詢</a></td>", "</tr>"]
+        html.append("</table>")
+        esc = lambda s: s.replace("/", "\\/").replace('"', '\\"').replace("'", "\\'")
+        return "\n".join(f"document.writeln('{esc(h)}');" for h in html) + "\n"
+
+    def test_unquoted_cash_and_labels(self):
+        js = self.export("""
+USD,32.8650,32.9650,-,-
+JPY,0.2044 <br><label class="highest">近7日最高 </label>,0.2079,- <br><label class="lowest">近30日最低 </label>,0.2104
+GBP,43.1720,43.6120,-,-
+""")
+        got = fx.parse_taishin(js)
+        self.assertEqual(set(got["quotes"]), {"USD", "JPY"})          # 英鎊不追蹤
+        self.assertEqual(got["quotes"]["USD"], {"cash_buy": None, "cash_sell": None,
+                                                "spot_buy": 32.865, "spot_sell": 32.965})
+        self.assertIsNone(got["quotes"]["JPY"]["cash_buy"])           # "-" 後面的「近30日最低」不是價格
+        self.assertEqual(got["quotes"]["JPY"]["cash_sell"], 0.2104)
+        self.assertEqual(got["board_time"], "2026-11-17T10:15:00+08:00")
+
+    def test_columns_follow_the_header_not_a_fixed_order(self):
+        js = self.export("USD,32.6630,33.1400,32.8650,32.9650", header="現鈔買入,現鈔賣出,即期買入,即期賣出")
+        self.assertEqual(
+            fx.parse_taishin(js)["quotes"]["USD"],
+            {"cash_buy": 32.663, "cash_sell": 33.14, "spot_buy": 32.865, "spot_sell": 32.965},
+        )
+
+    def test_a_html_page_is_not_parsed_as_rates(self):
+        with self.assertRaises(fx.ChallengeError):
+            fx.parse_taishin("<!DOCTYPE html><html><body>Access Denied</body></html>")
+
+    def test_layout_change_raises_instead_of_guessing(self):
+        # 表頭認不出來（例如欄名改了）就不該硬湊數字
+        js = self.export("USD,32.8650,32.9650,32.6630,33.1400", header="買入,賣出,現鈔買入,現鈔賣出")
+        with self.assertRaises(ValueError):
+            fx.parse_taishin(js)
+
+
 class DiscountTest(unittest.TestCase):
     def test_config_overrides_the_bank_per_currency(self):
         auto = {"esun": {"USD": 0.031, "JPY": 0.0012}}
@@ -183,6 +254,17 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(sources, {"bot", "esun"})
         # 樣本裡臺銀現鈔買 32.565、玉山現鈔賣 33.18；玉山現鈔買 32.63、臺銀現鈔賣 33.235：兩邊都不成立
         self.assertTrue(all(c["bp"] < 0 for c in cycles))
+
+    def test_esun_against_taishin_real_samples(self):
+        # 兩份真實樣本是不同時間抓的，這裡只拿來驗路徑計算，不代表當時的價差。
+        # 兩家的買賣價互相重疊，所以繞一圈都是負的。
+        sources = {"esun": fx.parse_esun(ESUN_RAW)["quotes"], "taishin": fx.parse_taishin(TAISHIN_JS)["quotes"]}
+        cycles = fx.best_cycles(fx.build_edges(sources), top=50)
+        self.assertEqual({st["source"] for c in cycles for st in c["steps"]}, {"esun", "taishin"})
+        self.assertTrue(all(c["bp"] < 0 for c in cycles), [c["bp"] for c in cycles[:3]])
+        # 日圓即期：台新賣 0.2079，比玉山牌告賣 0.2084 便宜，所以最便宜的日圓來回走台新
+        jpy = [c for c in cycles if c["steps"][0]["to"].startswith("JPY.acct")][0]
+        self.assertEqual(jpy["steps"][0]["source"], "taishin")
 
     def test_node_labels(self):
         self.assertEqual(fx.node_label("TWD"), "台幣")

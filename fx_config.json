@@ -1,5 +1,5 @@
 {
-  "sources": ["esun"],
+  "sources": ["esun", "taishin"],
   "discount": {},
   "alerts": [],
   "arb_alert_bp": null,
