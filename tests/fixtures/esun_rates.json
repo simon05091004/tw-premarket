@@ -1,0 +1,55 @@
+{
+ "DiscontFlag": "T",
+ "Rates": [
+  {
+   "Name": "歐元",
+   "BBoardRate": 36.08,
+   "SBoardRate": 36.48,
+   "CashBBoardRate": "35.78",
+   "CashSBoardRate": "36.78",
+   "BuyIncreaseRate": "36.2",
+   "SellDecreaseRate": "36.36",
+   "UpdateTime": "/Date(1794837700000)/",
+   "CCY": "EUR/TWD",
+   "Bonus": "0.12"
+  },
+  {
+   "Name": "泰銖",
+   "BBoardRate": 0.952,
+   "SBoardRate": 0.992,
+   "CashBBoardRate": "",
+   "CashSBoardRate": "",
+   "BuyIncreaseRate": "0.962",
+   "SellDecreaseRate": "0.982",
+   "UpdateTime": "/Date(1794837700000)/",
+   "CCY": "THB/TWD",
+   "Bonus": "0.01"
+  },
+  {
+   "Name": "日圓",
+   "BBoardRate": 0.2044,
+   "SBoardRate": 0.2084,
+   "CashBBoardRate": "0.2034",
+   "CashSBoardRate": "0.2104",
+   "BuyIncreaseRate": "0.2056",
+   "SellDecreaseRate": "0.2072",
+   "UpdateTime": "/Date(1794837700000)/",
+   "CCY": "JPY/TWD",
+   "Bonus": "0.0012"
+  },
+  {
+   "Name": "美元",
+   "BBoardRate": 32.88,
+   "SBoardRate": 32.98,
+   "CashBBoardRate": "32.63",
+   "CashSBoardRate": "33.18",
+   "BuyIncreaseRate": "32.911",
+   "SellDecreaseRate": "32.949",
+   "UpdateTime": "/Date(1794837700000)/",
+   "CCY": "USD/TWD",
+   "Bonus": "0.031"
+  }
+ ],
+ "Date": "2026/11/16 22:01:40",
+ "Count": 4
+}

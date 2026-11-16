@@ -2,13 +2,19 @@
 
     python -m unittest tests.test_fx
 
-不連網。CSV 範例是照臺銀牌告檔的版面手寫的（數字是編的），
-不是從線上抓回來的原檔。
+不連網。臺銀的 CSV 範例是照牌告檔的版面手寫的（數字是編的），
+不是從線上抓回來的原檔；玉山的樣本則是真實回應。
 """
 
+import copy
+import json
 import unittest
+from pathlib import Path
 
 from premarket import fx
+
+# 玉山的樣本是從線上真實回應裁下來的（2026-11-16 晚上），只留用得到的欄位。
+ESUN_RAW = json.loads((Path(__file__).parent / "fixtures" / "esun_rates.json").read_text(encoding="utf-8"))
 
 HEADER = (
     "幣別,匯率,現金,即期,遠期10天,遠期30天,遠期60天,遠期90天,遠期120天,遠期150天,遠期180天,"
@@ -64,6 +70,64 @@ class ParseTest(unittest.TestCase):
             fx.parse_bot_csv(HEADER + "\n")
 
 
+class EsunTest(unittest.TestCase):
+    def test_real_response(self):
+        got = fx.parse_esun(ESUN_RAW)
+        self.assertEqual(set(got["quotes"]), {"USD", "JPY", "EUR"})  # 泰銖不追蹤
+        self.assertEqual(
+            got["quotes"]["USD"],
+            {"cash_buy": 32.63, "cash_sell": 33.18, "spot_buy": 32.88, "spot_sell": 32.98},
+        )
+        self.assertEqual(got["quotes"]["JPY"]["cash_sell"], 0.2104)
+        self.assertEqual(got["bonus"], {"USD": 0.031, "JPY": 0.0012, "EUR": 0.12})
+        self.assertEqual(got["board_time"], "2026-11-16T22:01:40+08:00")
+
+    def test_discont_flag_is_ignored(self):
+        # 這個旗標在不同節點之間隨機跳，優惠值沒變；跟著它走會讓成本忽高忽低。
+        raw = {**ESUN_RAW, "DiscontFlag": ""}
+        self.assertEqual(fx.parse_esun(raw)["bonus"], fx.parse_esun(ESUN_RAW)["bonus"])
+
+    def test_bonus_must_agree_with_the_published_better_rate(self):
+        raw = copy.deepcopy(ESUN_RAW)
+        usd = next(r for r in raw["Rates"] if r["CCY"] == "USD/TWD")
+        usd["BuyIncreaseRate"] = ""          # 優惠價沒掛出來
+        jpy = next(r for r in raw["Rates"] if r["CCY"] == "JPY/TWD")
+        jpy["Bonus"] = "0.01"                # 和優惠價對不起來
+        self.assertEqual(fx.parse_esun(raw)["bonus"], {"EUR": 0.12})
+
+    def test_unquoted_cash_is_none(self):
+        raw = copy.deepcopy(ESUN_RAW)
+        eur = next(r for r in raw["Rates"] if r["CCY"] == "EUR/TWD")
+        eur["CashBBoardRate"] = eur["CashSBoardRate"] = ""
+        q = fx.parse_esun(raw)["quotes"]["EUR"]
+        self.assertIsNone(q["cash_buy"])
+        self.assertIsNone(q["cash_sell"])
+        self.assertEqual(q["spot_buy"], 36.08)
+
+    def test_no_tracked_currency_raises(self):
+        with self.assertRaises(ValueError):
+            fx.parse_esun({"Rates": [r for r in ESUN_RAW["Rates"] if r["CCY"] == "THB/TWD"]})
+
+    def test_online_discount_is_what_the_bank_publishes(self):
+        got = fx.parse_esun(ESUN_RAW)
+        q = fx.apply_discount(got["quotes"]["USD"], got["bonus"]["USD"])
+        self.assertAlmostEqual(q["spot_buy"], 32.911)   # = BuyIncreaseRate
+        self.assertAlmostEqual(q["spot_sell"], 32.949)  # = SellDecreaseRate
+
+
+class DiscountTest(unittest.TestCase):
+    def test_config_overrides_the_bank_per_currency(self):
+        auto = {"esun": {"USD": 0.031, "JPY": 0.0012}}
+        cfg = {"esun": {"USD": 0}, "bot": {"USD": 0.03}}
+        self.assertEqual(
+            fx.merge_discount(auto, cfg),
+            {"esun": {"USD": 0, "JPY": 0.0012}, "bot": {"USD": 0.03}},
+        )
+
+    def test_nothing_in_nothing_out(self):
+        self.assertEqual(fx.merge_discount({}, {}), {})
+
+
 class EngineTest(unittest.TestCase):
     def test_single_bank_never_has_a_free_lunch(self):
         cycles = fx.best_cycles(fx.build_edges({"bot": BOT}))
@@ -112,6 +176,19 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(route(p), ["TWD", "JPY.acct@bot"])
         self.assertAlmostEqual(p["factor"], 32.915 / 0.2083)
 
+    def test_two_real_shaped_banks(self):
+        esun = fx.parse_esun(ESUN_RAW)["quotes"]
+        cycles = fx.best_cycles(fx.build_edges({"bot": BOT, "esun": esun}), top=50)
+        sources = {st["source"] for c in cycles for st in c["steps"]}
+        self.assertEqual(sources, {"bot", "esun"})
+        # 樣本裡臺銀現鈔買 32.565、玉山現鈔賣 33.18；玉山現鈔買 32.63、臺銀現鈔賣 33.235：兩邊都不成立
+        self.assertTrue(all(c["bp"] < 0 for c in cycles))
+
+    def test_node_labels(self):
+        self.assertEqual(fx.node_label("TWD"), "台幣")
+        self.assertEqual(fx.node_label("JPY.cash"), "日圓現鈔")
+        self.assertEqual(fx.node_label("USD.acct@esun"), "美元帳戶·玉山銀行")
+
     def test_discount_narrows_the_spot_spread_only(self):
         q = fx.apply_discount(BOT["USD"], 0.03)
         self.assertAlmostEqual(q["spot_sell"], 32.985)
@@ -136,6 +213,13 @@ class MetricsTest(unittest.TestCase):
     def test_market_below_bid_means_sell_to_the_bank(self):
         m = fx.quote_metrics(BOT["USD"], {"price": 32.80, "time": T0}, T0)
         self.assertEqual(m["lag"]["side"], "sell")
+
+    def test_a_hair_outside_the_band_is_noise(self):
+        # 33.02 只比賣出價 33.015 高 1.5bp：市場中價自己的雜訊就不只這樣。
+        m = fx.quote_metrics(BOT["USD"], {"price": 33.02, "time": T0}, T0)
+        self.assertIsNone(m["lag"])
+        m = fx.quote_metrics(BOT["USD"], {"price": 33.03, "time": T0}, T0)
+        self.assertEqual(m["lag"], {"side": "buy", "bp": 4.5})
 
     def test_stale_board_is_not_called_a_lag(self):
         # 牌告停在 16:00、市場報價是 21:00：差距是因為銀行下班，不是機會。
@@ -201,7 +285,19 @@ class AlertTest(unittest.TestCase):
         ]}
         hits = fx.check_alerts(cfg, {"bot": BOT}, self.derived({}))
         self.assertEqual(len(hits), 2)
-        self.assertIn("JPY 即期賣出 0.2083", hits[0]["text"])
+        self.assertIn("臺灣銀行 JPY 即期賣出 0.2083", hits[0]["text"])
+
+    def test_arb_alert_names_the_banks(self):
+        esun = copy.deepcopy(fx.parse_esun(ESUN_RAW)["quotes"])
+        esun["USD"].update(cash_buy=32.2, cash_sell=32.5)   # 賣得比臺銀現鈔買入 32.565 還便宜
+        sources = {"bot": BOT, "esun": esun}
+        d = fx.derive(sources, {"bot": T0, "esun": T0}, {}, [], T0)
+        hits = fx.check_alerts({"arb_alert_bp": 0}, sources, d)
+        self.assertEqual(len(hits), 1)
+        self.assertIn("+20.0bp", hits[0]["text"])
+        self.assertIn("（玉山銀行現鈔賣出）美元現鈔", hits[0]["text"])
+        self.assertIn("（臺灣銀行現鈔買入）台幣", hits[0]["text"])
+        self.assertEqual(fx.check_alerts({"arb_alert_bp": 25}, sources, d), [])
 
     def test_no_arb_alert_when_every_cycle_loses(self):
         hits = fx.check_alerts({"arb_alert_bp": -1000}, {"bot": BOT}, self.derived({}))

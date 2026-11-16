@@ -1,4 +1,5 @@
 {
+  "sources": ["bot", "esun"],
   "discount": {},
   "alerts": [],
   "arb_alert_bp": null,

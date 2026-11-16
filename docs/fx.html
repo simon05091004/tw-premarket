@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>外匯追蹤 · 美元 日圓 歐元 牌告與套利路徑</title>
-<meta name="description" content="臺灣銀行美元、日圓、歐元的現鈔與即期牌告，對照國際市場中價，計算價差、牌告偏離與換匯路徑成本。">
+<meta name="description" content="臺灣銀行、玉山銀行美元、日圓、歐元的現鈔與即期牌告，對照國際市場中價，計算價差、牌告偏離與換匯路徑成本。">
 <meta name="theme-color" content="#15171C">
 <link rel="icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -146,6 +146,7 @@
     <h2>走勢</h2>
     <div class="chart-bar">
       <div class="tabs" id="t-ccy"></div>
+      <div class="tabs" id="t-src"></div>
       <div class="tabs" id="t-range"></div>
     </div>
     <div class="legend" id="legend"></div>
@@ -156,7 +157,7 @@
     <h2>設定 <small>只存在這台裝置的瀏覽器</small></h2>
     <details>
       <summary>網銀讓分</summary>
-      <p class="note">線上換匯的優惠，每 1 外幣讓幾元台幣。只套用在即期：賣出價減、買入價加。</p>
+      <p class="note">線上換匯的優惠，每 1 外幣讓幾元台幣。只套用在即期：賣出價減、買入價加。留空就用灰字的預設值（玉山是銀行公布的網銀優惠）；你拿不到優惠就填 0。</p>
       <div class="form" id="disc" style="grid-template-columns:repeat(3,1fr);margin-top:.5rem"></div>
     </details>
     <details id="custom-box">
@@ -168,7 +169,7 @@
   </section>
 
   <footer>
-    牌告來源：臺灣銀行。市場中價：Yahoo Finance（日圓、歐元兌台幣由美元交叉盤合成），僅供參考，非可成交價。
+    牌告來源：臺灣銀行、玉山銀行。市場中價：Yahoo Finance（日圓、歐元兌台幣由美元交叉盤合成），僅供參考，非可成交價。
     本頁不構成投資建議。<a href="index.html">盤前分析</a>
   </footer>
 </div>
@@ -178,7 +179,9 @@
 const FOREIGN = ["USD", "JPY", "EUR"];
 const FIELDS = ["cash_buy", "cash_sell", "spot_buy", "spot_sell"];
 const CCY_NAME = { TWD:"台幣", USD:"美元", JPY:"日圓", EUR:"歐元" };
+const BANKS = { bot:"臺灣銀行", esun:"玉山銀行" };
 const FRESH_MIN = 30;
+const LAG_MIN_BP = 3;   // 和 fx.py 的 LAG_MIN_BP 一致：市場中價本身有幾 bp 的雜訊
 const DEMO = new URLSearchParams(location.search).has("demo");
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
@@ -188,14 +191,14 @@ const store = {
   set(k, v) { try { localStorage.setItem("fx." + k, JSON.stringify(v)); } catch (e) { /* 無痕模式：這次有效就好 */ } },
 };
 
-const S = { latest:null, rows:[], ccy:"USD", range:30, sources:{}, names:{}, edges:[], cycles:[] };
+const S = { latest:null, rows:[], ccy:"USD", src:"", range:30, sources:{}, names:{}, edges:[], cycles:[] };
 
 // ───────── 套利引擎：和 premarket/fx.py 是同一份邏輯，改一邊要改另一邊 ─────────
 function applyDiscount(q, d) {
   const o = Object.assign({}, q);
   if (!d) return o;
-  if (o.spot_sell) o.spot_sell -= d;
-  if (o.spot_buy) o.spot_buy += d;
+  if (o.spot_sell) o.spot_sell = Math.round((o.spot_sell - d) * 1e6) / 1e6;
+  if (o.spot_buy) o.spot_buy = Math.round((o.spot_buy + d) * 1e6) / 1e6;
   return o;
 }
 function buildEdges(sources) {
@@ -252,7 +255,11 @@ function nodeLabel(n) {
 }
 function stepsHtml(start, steps) {
   let h = "<span>" + esc(nodeLabel(start)) + "</span>";
-  for (const s of steps) h += '<span class="how">─' + esc(s.how) + "→</span><span>" + esc(nodeLabel(s.to)) + "</span>";
+  for (const s of steps) {
+    // 台幣 ↔ 現鈔這一步，兩端的名字都看不出是哪一家做的，要補上銀行名
+    const who = s.from.includes("@") || s.to.includes("@") ? "" : (S.names[s.source] || s.source) + " ";
+    h += '<span class="how">─' + esc(who + s.how) + "→</span><span>" + esc(nodeLabel(s.to)) + "</span>";
+  }
   return '<div class="steps">' + h + "</div>";
 }
 function dailyStats(src, ccy, days = 90) {
@@ -267,14 +274,18 @@ function dailyStats(src, ccy, days = 90) {
 }
 
 // ───────── 組資料 ─────────
+function discountFor(src, ccy) {
+  const mine = (store.get("disc", {})[src] || {})[ccy];
+  if (mine != null && isFinite(+mine)) return +mine;       // 這台裝置上填的優先（填 0 = 不套用）
+  return +((((S.latest || {}).discount || {})[src] || {})[ccy]) || 0;
+}
 function rebuild() {
   const L = S.latest || {};
-  const disc = store.get("discount", null) || (L.discount && L.discount.bot) || {};
   S.sources = {}; S.names = {}; S.raw = {}; S.board = {};
   for (const [src, v] of Object.entries(L.sources || {})) {
     S.raw[src] = v.quotes; S.names[src] = v.name; S.board[src] = v.board_time;
     S.sources[src] = {};
-    for (const [ccy, q] of Object.entries(v.quotes)) S.sources[src][ccy] = applyDiscount(q, src === "bot" ? +disc[ccy] || 0 : 0);
+    for (const [ccy, q] of Object.entries(v.quotes)) S.sources[src][ccy] = applyDiscount(q, discountFor(src, ccy));
   }
   for (const c of store.get("custom", [])) {
     const quotes = {};
@@ -293,15 +304,20 @@ function rebuild() {
 // ───────── 繪製 ─────────
 function renderMeta() {
   const L = S.latest || {};
-  const bot = (L.sources || {}).bot;
+  const have = Object.entries(L.sources || {});
   const mk = (L.market || {}).USDTWD;
   $("meta").innerHTML =
-    "<span>牌告 " + (bot ? hhmm(bot.board_time) : "未取得") + "</span><span>市場中價 " + (mk ? hhmm(mk.time) : "未取得") + "</span>" +
-    (DEMO ? '<span class="pill">示範資料</span>' : "");
+    (have.length ? have.map(([, v]) => "<span>" + esc(v.name) + " " + hhmm(v.board_time) + "</span>").join("") : "<span>牌告未取得</span>") +
+    "<span>市場中價 " + (mk ? hhmm(mk.time) : "未取得") + "</span>" + (DEMO ? '<span class="pill">示範資料</span>' : "");
   const msg = [];
   if (DEMO) msg.push("這是示範資料，數字是編的，用來看版面與算法。拿掉網址的 ?demo 就是實際資料。");
-  else if (!bot) msg.push("還沒有抓到臺灣銀行的牌告。可以先在下方「其他銀行報價」手動輸入，套利掃描與計算機照樣能用。");
-  else if (bot.stale) msg.push("最近一次沒抓到臺灣銀行牌告，以下是 " + hhmm(bot.board_time) + " 的舊牌告。");
+  else {
+    const never = (L.missing || []).filter((k) => BANKS[k] && !(L.sources || {})[k]).map((k) => BANKS[k]);
+    const stale = have.filter(([, v]) => v.stale);
+    if (!have.length) msg.push("還沒有抓到任何銀行的牌告。可以先在下方「其他銀行報價」手動輸入，套利掃描與計算機照樣能用。");
+    else if (never.length) msg.push("還沒有抓到" + never.join("、") + "的牌告，目前只有" + have.map(([, v]) => v.name).join("、") + "。");
+    for (const [, v] of stale) msg.push("最近一次沒抓到" + v.name + "的牌告，以下是 " + hhmm(v.board_time) + " 的舊牌告。");
+  }
   $("banner").textContent = msg.join(" ");
   $("banner").classList.toggle("show", msg.length > 0);
 }
@@ -309,8 +325,8 @@ function renderMeta() {
 function renderQuotes() {
   const market = (S.latest || {}).market || {};
   let h = "";
-  for (const src of Object.keys(S.sources)) {
-    for (const ccy of FOREIGN) {
+  for (const ccy of FOREIGN) {
+    for (const src of Object.keys(S.sources)) {   // 同一個幣別的幾家排在一起，方便上下比
       const q = S.sources[src][ccy], raw = (S.raw[src] || {})[ccy];
       if (!q) continue;
       const mk = market[ccy + "TWD"], m = mid(q.spot_buy, q.spot_sell);
@@ -321,8 +337,8 @@ function renderQuotes() {
       const gap = minutesApart(S.board[src], mk && mk.time);
       let lag = "";
       if (mk && m && gap != null && gap <= FRESH_MIN) {
-        if (mk.price > q.spot_sell) lag = '<span class="pill pos">牌告滯後 ' + ((mk.price / q.spot_sell - 1) * 1e4).toFixed(1) + "bp・向銀行買有利</span>";
-        else if (mk.price < q.spot_buy) lag = '<span class="pill pos">牌告滯後 ' + ((q.spot_buy / mk.price - 1) * 1e4).toFixed(1) + "bp・賣給銀行有利</span>";
+        const buy = mk.price > q.spot_sell, over = (buy ? mk.price / q.spot_sell - 1 : q.spot_buy / mk.price - 1) * 1e4;
+        if (over >= LAG_MIN_BP) lag = '<span class="pill pos">牌告滯後 ' + over.toFixed(1) + "bp・" + (buy ? "向銀行買有利" : "賣給銀行有利") + "</span>";
       }
       const st = dailyStats(src, ccy);
       const adj = (f) => (raw && raw[f] && Math.abs(raw[f] - q[f]) > 1e-9 ? "<small>讓分後</small>" : "");
@@ -347,8 +363,11 @@ function renderQuotes() {
 function renderArb() {
   if (!S.cycles.length) { $("arb").innerHTML = '<div class="empty">沒有報價可以計算。</div>'; $("cross").innerHTML = ""; return; }
   const best = S.cycles[0];
+  // 上一輪沒抓到的銀行會沿用舊牌告；靠舊牌告算出來的正報酬要講明白
+  const old = [...new Set(best.steps.map((s) => s.source))].filter((k) => (((S.latest || {}).sources || {})[k] || {}).stale).map((k) => S.names[k]);
   const head = best.bp > 0
-    ? '<div class="big num pos">' + bp(best.bp) + ' bp</div><div>帳面上有套利空間。下單前先確認兩邊報價都還是現在這個數字，並把固定費用算進去。</div>'
+    ? '<div class="big num pos">' + bp(best.bp) + ' bp</div><div>帳面上有套利空間。下單前先確認兩邊報價都還是現在這個數字，並把固定費用算進去。' +
+      (old.length ? "<b>注意：" + esc(old.join("、")) + "用的是舊牌告，這個數字不可靠。</b>" : "") + "</div>"
     : '<div class="big num">' + bp(best.bp) + ' bp</div><div class="muted">目前沒有套利空間。繞一圈最少賠這麼多，這也是你來回換匯的最低成本。</div>';
   let h = '<div class="verdict">' + head + '<ul class="cyc">';
   for (const c of S.cycles.slice(0, 5)) h += '<li><span class="bp num ' + (c.bp > 0 ? "pos" : "") + '">' + bp(c.bp) + "</span>" + stepsHtml("TWD", c.steps) + "</li>";
@@ -356,8 +375,8 @@ function renderArb() {
 
   const market = (S.latest || {}).market || {};
   let rows = "";
-  for (const src of Object.keys(S.sources)) {
-    for (const pair of ["USDJPY", "EURUSD", "EURJPY"]) {
+  for (const pair of ["USDJPY", "EURUSD", "EURJPY"]) {
+    for (const src of Object.keys(S.sources)) {
       const b = S.sources[src][pair.slice(0, 3)], q = S.sources[src][pair.slice(3)], mk = market[pair];
       if (!b || !q) continue;
       const mb = mid(b.spot_buy, b.spot_sell), mq = mid(q.spot_buy, q.spot_sell);
@@ -417,11 +436,14 @@ function tabs(id, items, cur, on) {
 function renderChart() {
   tabs("t-ccy", FOREIGN.map((c) => [c, c]), S.ccy, (v) => { S.ccy = v; renderChart(); });
   tabs("t-range", [[1, "1 日"], [7, "7 日"], [30, "30 日"], [90, "90 日"]], S.range, (v) => { S.range = +v; renderChart(); });
+  const srcs = Object.keys(((S.latest || {}).sources) || {}).filter((k) => S.rows.some((r) => r[1] === k));
+  if (!srcs.includes(S.src)) S.src = srcs[0] || "bot";
+  tabs("t-src", srcs.length > 1 ? srcs.map((k) => [k, esc(S.names[k] || k)]) : [], S.src, (v) => { S.src = v; renderChart(); });
   const since = Date.now() - S.range * 864e5;
   const pick = (src, i) => S.rows.filter((r) => r[1] === src && r[2] === S.ccy && r[i] != null && +new Date(r[0]) >= since).map((r) => [+new Date(r[0]), r[i]]);
   const series = [
-    { name:"即期賣出（你買）", color:"var(--accent)", step:true, pts:pick("bot", 6) },
-    { name:"即期買入（你賣）", color:"var(--accent2)", step:true, pts:pick("bot", 5) },
+    { name:"即期賣出（你買）", color:"var(--accent)", step:true, pts:pick(S.src, 6) },
+    { name:"即期買入（你賣）", color:"var(--accent2)", step:true, pts:pick(S.src, 5) },
     { name:"市場中價", color:"var(--muted)", step:false, dash:"3 3", pts:pick("mkt", 5) },
   ].filter((s) => s.pts.length);
   const legend = (vals) => series.map((s, i) => "<span><i style=\"background:" + s.color + '"></i>' + s.name +
@@ -471,12 +493,17 @@ function renderChart() {
 // ───────── 設定 ─────────
 function renderSettings() {
   const L = S.latest || {};
-  const disc = store.get("discount", null) || (L.discount && L.discount.bot) || {};
-  $("disc").innerHTML = FOREIGN.map((c) => '<div><label for="d-' + c + '">' + c + '</label><input id="d-' + c + '" class="num" inputmode="decimal" placeholder="0" value="' + (disc[c] || "") + '"></div>').join("");
-  $("disc").oninput = () => {
-    const d = {};
-    for (const c of FOREIGN) { const v = parseFloat($("d-" + c).value); if (v > 0) d[c] = v; }
-    store.set("discount", d); refresh(false);
+  const mine = store.get("disc", {}), def = L.discount || {};
+  $("disc").innerHTML = Object.entries(L.sources || {}).map(([src, v]) =>
+    '<div class="wide" style="font-size:.8rem;margin-top:.3rem">' + esc(v.name) + "</div>" +
+    FOREIGN.map((c) => { const mv = (mine[src] || {})[c]; return '<div><label for="d-' + src + "-" + c + '">' + c + '</label><input id="d-' + src + "-" + c +
+      '" data-s="' + src + '" data-c="' + c + '" class="num" inputmode="decimal" placeholder="' + ((def[src] || {})[c] || 0) + '" value="' + (mv == null ? "" : esc(mv)) + '"></div>'; }).join("")
+  ).join("") || '<div class="wide muted" style="font-size:.85rem">還沒有自動抓到的銀行。</div>';
+  $("disc").oninput = (e) => {
+    const t = e.target; if (!t.dataset.s) return;
+    const cur = store.get("disc", {}), o = (cur[t.dataset.s] = cur[t.dataset.s] || {}), v = parseFloat(t.value);
+    if (t.value.trim() === "" || !(v >= 0)) delete o[t.dataset.c]; else o[t.dataset.c] = v;
+    store.set("disc", cur); refresh(false);
   };
   const list = store.get("custom", []);
   const label = { cash_buy:"現鈔買入", cash_sell:"現鈔賣出", spot_buy:"即期買入", spot_sell:"即期賣出" };
@@ -516,7 +543,8 @@ function demoData() {
   const base = { USD:[32.965, 0.05, 0.335], JPY:[0.2063, 0.002, 0.0048], EUR:[36.30, 0.2, 0.47] };  // 中價, 即期半價差, 現鈔半價差
   const now = new Date(); now.setSeconds(0, 0);
   const iso = (d) => new Date(d.getTime() + 8 * 36e5).toISOString().slice(0, 19) + "+08:00";
-  const rows = [], last = {};
+  const esunHalf = { USD:[0.05, 0.275], JPY:[0.002, 0.0035], EUR:[0.2, 0.5] };  // 玉山：即期、現鈔半價差
+  const rows = [], last = {}, last2 = {};
   for (const ccy of FOREIGN) {
     const [m0, hs, hc] = base[ccy], n = 90 + 6 * 5;
     const path = []; let m = m0;
@@ -530,6 +558,10 @@ function demoData() {
       rows.push([iso(d), "bot", ccy, q.cash_buy, q.cash_sell, q.spot_buy, q.spot_sell]);
       rows.push([iso(d), "mkt", ccy, null, null, +(mm * (1 + rnd() * 0.0006)).toFixed(6), null]);
       last[ccy] = q;
+      const r2 = (v) => +v.toFixed(ccy === "JPY" ? 4 : 2), m2 = mm * 0.9997, [es, ec] = esunHalf[ccy];
+      const e = { cash_buy:r2(m2 - ec), cash_sell:r2(m2 + ec), spot_buy:r2(m2 - es), spot_sell:r2(m2 + es) };
+      rows.push([iso(d), "esun", ccy, e.cash_buy, e.cash_sell, e.spot_buy, e.spot_sell]);
+      last2[ccy] = e;
     });
   }
   rows.sort((a, b) => (a[0] < b[0] ? -1 : 1));
@@ -538,7 +570,8 @@ function demoData() {
   market.USDJPY = { price:market.USDTWD.price / market.JPYTWD.price, time:t };
   market.EURUSD = { price:market.EURTWD.price / market.USDTWD.price, time:t };
   market.EURJPY = { price:market.EURTWD.price / market.JPYTWD.price, time:t };
-  return { latest:{ fetched_at:t, sources:{ bot:{ name:"臺灣銀行", board_time:t, quotes:last } }, market, missing:[], discount:{} }, rows };
+  return { latest:{ fetched_at:t, sources:{ bot:{ name:"臺灣銀行", board_time:t, quotes:last }, esun:{ name:"玉山銀行", board_time:t, quotes:last2 } },
+    market, missing:[], discount:{ esun:{ USD:0.031, JPY:0.0012, EUR:0.12 } } }, rows };
 }
 async function load() {
   if (DEMO) { const d = demoData(); S.latest = d.latest; S.rows = d.rows; refresh(true); return; }
@@ -546,7 +579,8 @@ async function load() {
     const get = (f) => fetch("data/fx/" + f + "?t=" + Date.now(), { cache:"no-store" }).then((r) => { if (!r.ok) throw new Error(f + " " + r.status); return r.json(); });
     const [latest, hist] = await Promise.all([get("latest.json"), get("history.json").catch(() => ({ rows:[] }))]);
     S.latest = latest; S.rows = hist.rows || [];
-    refresh(!S.loaded); S.loaded = true;
+    const key = Object.keys(latest.sources || {}).join(",");   // 抓到的銀行變了，讓分欄位要重畫
+    refresh(!S.loaded || key !== S.srcKey); S.loaded = true; S.srcKey = key;
   } catch (e) {
     if (!S.latest) { refresh(true); $("meta").textContent = "資料載入失敗"; $("banner").textContent = "讀不到 data/fx/latest.json（" + e.message + "）。排程還沒跑過第一次的話這是正常的。"; $("banner").classList.add("show"); }
   }
