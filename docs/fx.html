@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>外匯追蹤 · 美元 日圓 歐元 牌告與套利路徑</title>
-<meta name="description" content="臺灣銀行、玉山銀行美元、日圓、歐元的現鈔與即期牌告，對照國際市場中價，計算價差、牌告偏離與換匯路徑成本。">
+<meta name="description" content="銀行美元、日圓、歐元的現鈔與即期牌告，對照國際市場中價，計算價差、牌告偏離與換匯路徑成本。">
 <meta name="theme-color" content="#15171C">
 <link rel="icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -169,7 +169,7 @@
   </section>
 
   <footer>
-    牌告來源：臺灣銀行、玉山銀行。市場中價：Yahoo Finance（日圓、歐元兌台幣由美元交叉盤合成），僅供參考，非可成交價。
+    牌告來源：<span id="src-names">各銀行的公開牌告</span>。市場中價：Yahoo Finance（日圓、歐元兌台幣由美元交叉盤合成），僅供參考，非可成交價。
     本頁不構成投資建議。<a href="index.html">盤前分析</a>
   </footer>
 </div>
@@ -309,6 +309,8 @@ function renderMeta() {
   $("meta").innerHTML =
     (have.length ? have.map(([, v]) => "<span>" + esc(v.name) + " " + hhmm(v.board_time) + "</span>").join("") : "<span>牌告未取得</span>") +
     "<span>市場中價 " + (mk ? hhmm(mk.time) : "未取得") + "</span>" + (DEMO ? '<span class="pill">示範資料</span>' : "");
+  const all = Object.keys(S.names).map((k) => S.names[k]);   // 含手動輸入的那幾家
+  $("src-names").textContent = all.length ? all.join("、") : "各銀行的公開牌告";
   const msg = [];
   if (DEMO) msg.push("這是示範資料，數字是編的，用來看版面與算法。拿掉網址的 ?demo 就是實際資料。");
   else {

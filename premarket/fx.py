@@ -70,7 +70,9 @@ KEEP_DAYS = 400
 HEARTBEAT_MIN = 55
 
 DEFAULT_CONFIG: dict[str, Any] = {
-    "sources": ["bot", "esun"],  # 要抓哪幾家
+    # 要抓哪幾家。臺銀（"bot"）對機房 IP 回驗證頁，GitHub Actions 上抓不到，
+    # 所以預設不抓；在自己的電腦上跑的話可以加回來。
+    "sources": ["esun"],
     # {"bot": {"USD": 0.03}}：網銀讓分，每單位外幣讓幾元台幣。
     # 玉山的 API 自己會帶當下的網銀優惠，這裡有寫才會蓋掉它（寫 0 = 不套用優惠）。
     "discount": {},
