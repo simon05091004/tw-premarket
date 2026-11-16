@@ -1,0 +1,86 @@
+name: 外匯牌告追蹤
+
+on:
+  schedule:
+    # 臺銀牌告營業日 09:00–16:00 掛牌。台北 09:07–15:52 每 15 分鐘一次，
+    # 再加 16:07 收最後一筆。分鐘數避開 :00/:30（GitHub 排程最壅塞的時段）。
+    # 排程會延遲、偶爾整個被丟掉；這裡丟一輪沒關係，下一輪 15 分鐘後就來。
+    - cron: "7,22,37,52 1-7 * * 1-5"
+    - cron: "7 8 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "牌告沒變也寫檔"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fx
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      TZ: Asia/Taipei
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: 跑測試
+        run: python -m unittest tests.test_fx
+
+      - name: 抓牌告
+        id: fx
+        run: |
+          ARGS=()
+          if [ "${{ inputs.force }}" = "true" ]; then ARGS+=(--force); fi
+          python -m premarket.fx "${ARGS[@]}"
+
+      - name: 推回 repo
+        run: |
+          git config user.name  "premarket-bot"
+          git config user.email "premarket-bot@users.noreply.github.com"
+          git add docs/data/fx
+          # 牌告沒變時 fx.py 根本不寫檔，這裡就沒東西可 commit，直接結束。
+          if git diff --staged --quiet; then echo "沒有變動"; exit 0; fi
+          git commit -m "外匯牌告 $(date '+%Y-%m-%d %H:%M')"
+          # 盤前／盤後的排程也會推同一個分支；撞到就重拉再推，最多三次。
+          for i in 1 2 3; do
+            git pull --rebase && git push && exit 0
+            sleep $((i * 5))
+          done
+          exit 1
+
+      # 只有 fx_config.json 裡設了提醒、而且這一輪真的觸發，alert_text 才有內容。
+      # 同一則提醒一天只發一次（見 fx.py 的 alert_state）。
+      - name: LINE 提醒
+        if: success() && env.LINE_TOKEN != '' && steps.fx.outputs.alert_text != ''
+        env:
+          LINE_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          PAGES_URL: ${{ vars.PAGES_URL }}
+          ALERT_TEXT: ${{ steps.fx.outputs.alert_text }}
+        run: |
+          MSG="${ALERT_TEXT}
+          ${PAGES_URL:-https://github.com/${{ github.repository }}}/fx.html"
+          CODE=$(curl -sS -X POST https://api.line.me/v2/bot/message/broadcast \
+            -H "Authorization: Bearer $LINE_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg t "$MSG" '{messages:[{type:"text",text:$t}]}')" \
+            -o /dev/null -w "%{http_code}") || CODE="000"
+          echo "LINE 回應碼 $CODE"
+          case "$CODE" in
+            2*) ;;
+            401|403) echo "::error::LINE 權杖無效或已過期。牌告資料已更新，只有提醒沒送出。"; exit 1 ;;
+            *) echo "::warning::LINE 廣播失敗（HTTP $CODE），可能是暫時性問題。" ;;
+          esac
