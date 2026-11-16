@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>外匯追蹤 · 美元 日圓 歐元 牌告與套利路徑</title>
+<meta name="description" content="臺灣銀行美元、日圓、歐元的現鈔與即期牌告，對照國際市場中價，計算價差、牌告偏離與換匯路徑成本。">
+<meta name="theme-color" content="#15171C">
+<link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --paper:#FCFCFA; --card:#F4F3EE; --ink:#15171C; --muted:#6B6F78; --rule:#E4E3DE;
+    --up:#C8322B;        /* 台股慣例：紅 = 漲／正值 */
+    --down:#0E7A52;
+    --accent:#1C5BA8;    /* 即期賣出（你買外幣的價） */
+    --accent2:#B25E09;   /* 即期買入（你賣外幣的價） */
+    --mono:"IBM Plex Mono","Noto Sans TC",monospace;
+    --sans:"Noto Sans TC",system-ui,sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:#15171C; --card:#1E2128; --ink:#ECEBE6; --muted:#9296A0; --rule:#2C3039;
+      --up:#FF6B61; --down:#44C08A; --accent:#6FA8F5; --accent2:#E8A04C;
+    }
+  }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { margin:0; background:var(--paper); color:var(--ink); }
+  body { font-family:var(--sans); line-height:1.6; -webkit-text-size-adjust:100%; padding-bottom:3rem; }
+  .wrap { max-width:46rem; margin:0 auto; padding:0 1rem; }
+  button, input, select { font:inherit; color:inherit; }
+  button { cursor:pointer; background:none; border:none; padding:0; }
+  .num { font-family:var(--mono); font-variant-numeric:tabular-nums; }
+  .muted { color:var(--muted); }
+  .pos { color:var(--up); } .neg { color:var(--down); }
+
+  header { padding:1.25rem 0 .5rem; }
+  h1 { font-size:1.35rem; margin:0; letter-spacing:.02em; }
+  .meta { font-size:.8rem; color:var(--muted); display:flex; flex-wrap:wrap; gap:.25rem .9rem; margin-top:.25rem; }
+  .banner { display:none; margin:.75rem 0 0; padding:.6rem .8rem; border-radius:.5rem; font-size:.85rem;
+            background:var(--card); border-left:3px solid var(--accent2); }
+  .banner.show { display:block; }
+
+  h2 { font-size:1rem; margin:2rem 0 .6rem; padding-bottom:.35rem; border-bottom:1px solid var(--rule);
+       display:flex; align-items:baseline; justify-content:space-between; gap:.5rem; }
+  h2 small { font-weight:400; font-size:.75rem; color:var(--muted); }
+  .note { font-size:.78rem; color:var(--muted); margin:.5rem 0 0; }
+  .empty { padding:1rem; text-align:center; color:var(--muted); font-size:.9rem; background:var(--card); border-radius:.6rem; }
+
+  /* 牌告卡 */
+  .q { background:var(--card); border-radius:.6rem; padding:.8rem .9rem; margin-bottom:.6rem; }
+  .q-head { display:flex; align-items:baseline; justify-content:space-between; gap:.5rem; }
+  .q-ccy { font-weight:700; }
+  .q-ccy span { font-weight:400; font-size:.8rem; color:var(--muted); margin-left:.35rem; }
+  .q-chg { font-size:.8rem; }
+  .q-grid { display:grid; grid-template-columns:auto 1fr 1fr; gap:.15rem .75rem; margin:.45rem 0 .5rem; align-items:baseline; }
+  .q-grid .h { font-size:.72rem; color:var(--muted); text-align:right; }
+  .q-grid .r { font-size:.8rem; color:var(--muted); }
+  .q-grid .v { text-align:right; font-size:1.05rem; }
+  .q-grid .v small { font-size:.7rem; color:var(--muted); margin-left:.3rem; }
+  .q-foot { display:flex; flex-wrap:wrap; gap:.15rem .9rem; font-size:.78rem; color:var(--muted); }
+  .q-foot b { font-weight:500; color:var(--ink); }
+  .pill { display:inline-block; font-size:.72rem; padding:.05rem .45rem; border-radius:1rem; border:1px solid currentColor; }
+  .range { margin-top:.5rem; font-size:.72rem; color:var(--muted); display:grid; grid-template-columns:auto 1fr auto; gap:.5rem; align-items:center; }
+  .range .bar { position:relative; height:4px; background:var(--rule); border-radius:2px; }
+  .range .dot { position:absolute; top:-3px; width:10px; height:10px; margin-left:-5px; border-radius:50%; background:var(--ink); border:2px solid var(--card); }
+
+  /* 套利 */
+  .verdict { background:var(--card); border-radius:.6rem; padding:.8rem .9rem; }
+  .verdict .big { font-size:1.5rem; font-weight:600; }
+  .cyc { list-style:none; margin:.6rem 0 0; padding:0; }
+  .cyc li { display:grid; grid-template-columns:4.6rem 1fr; gap:.5rem; padding:.45rem 0; border-top:1px solid var(--rule); font-size:.85rem; align-items:baseline; }
+  .cyc .bp { text-align:right; }
+  .steps { display:flex; flex-wrap:wrap; gap:.15rem .3rem; align-items:baseline; }
+  .steps .how { font-size:.7rem; color:var(--muted); }
+  table { width:100%; border-collapse:collapse; font-size:.82rem; margin-top:.75rem; }
+  th, td { padding:.35rem .3rem; text-align:right; border-bottom:1px solid var(--rule); }
+  th { font-weight:500; color:var(--muted); font-size:.72rem; }
+  th:first-child, td:first-child { text-align:left; }
+
+  /* 計算機、設定 */
+  .form { display:grid; grid-template-columns:1fr 1fr; gap:.5rem; }
+  .form label { font-size:.75rem; color:var(--muted); display:block; }
+  .form .wide { grid-column:1 / -1; }
+  input, select { width:100%; background:var(--paper); border:1px solid var(--rule); border-radius:.4rem; padding:.45rem .55rem; }
+  input:focus, select:focus, button:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+  .result { margin-top:.7rem; background:var(--card); border-radius:.6rem; padding:.8rem .9rem; }
+  .result .big { font-size:1.4rem; font-weight:600; }
+  .alt { font-size:.82rem; padding:.35rem 0; border-top:1px solid var(--rule); }
+  .btn { border:1px solid var(--rule); border-radius:.4rem; padding:.35rem .7rem; font-size:.85rem; background:var(--paper); }
+  .btn.danger { color:var(--up); }
+  details { background:var(--card); border-radius:.6rem; padding:.6rem .9rem; margin-bottom:.6rem; }
+  summary { cursor:pointer; font-size:.9rem; font-weight:500; }
+  .cq { margin-top:.7rem; padding-top:.7rem; border-top:1px solid var(--rule); }
+  .cq-grid { display:grid; grid-template-columns:2.6rem repeat(4,1fr); gap:.3rem; align-items:center; font-size:.75rem; margin-top:.4rem; }
+  .cq-grid input { padding:.3rem .35rem; font-size:.8rem; }
+  .cq-grid .h { color:var(--muted); text-align:center; }
+
+  /* 走勢 */
+  .tabs { display:flex; gap:.3rem; flex-wrap:wrap; }
+  .tabs button { font-size:.8rem; padding:.2rem .65rem; border-radius:1rem; border:1px solid var(--rule); color:var(--muted); }
+  .tabs button[aria-pressed="true"] { background:var(--ink); color:var(--paper); border-color:var(--ink); }
+  .chart-bar { display:flex; justify-content:space-between; gap:.5rem; flex-wrap:wrap; }
+  .legend { display:flex; flex-wrap:wrap; gap:.2rem .9rem; font-size:.75rem; color:var(--muted); margin:.5rem 0 .1rem; min-height:1.3rem; }
+  .legend i { display:inline-block; width:.9rem; height:2px; vertical-align:middle; margin-right:.3rem; }
+  svg { display:block; width:100%; height:auto; touch-action:pan-y; }
+  svg text { font-family:var(--mono); font-size:11px; fill:var(--muted); }
+  footer { margin-top:2.5rem; font-size:.75rem; color:var(--muted); }
+  footer a { color:inherit; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>外匯追蹤</h1>
+    <div class="meta" id="meta">載入中…</div>
+    <div class="banner" id="banner"></div>
+  </header>
+
+  <section>
+    <h2>牌告 <small>每 1 外幣兌台幣・買入／賣出是銀行的方向</small></h2>
+    <div id="quotes"></div>
+  </section>
+
+  <section>
+    <h2>套利掃描 <small>從台幣出發繞一圈回台幣</small></h2>
+    <div id="arb"></div>
+    <div id="cross"></div>
+    <p class="note">bp = 萬分之一。「實際成本」是真的賣掉前者、經台幣買進後者，比國際盤少換到多少。以上只計買賣價差與現鈔匯差；現鈔存提的最低手續費、跨行匯款費用另計，小額時它們才是主要成本。</p>
+  </section>
+
+  <section>
+    <h2>換匯計算機 <small>找最划算的路徑</small></h2>
+    <div class="form">
+      <div><label for="c-from">我有</label><select id="c-from"></select></div>
+      <div><label for="c-to">想換成</label><select id="c-to"></select></div>
+      <div class="wide"><label for="c-amt">金額</label><input id="c-amt" class="num" inputmode="decimal" value="100000"></div>
+    </div>
+    <div id="calc"></div>
+  </section>
+
+  <section>
+    <h2>走勢</h2>
+    <div class="chart-bar">
+      <div class="tabs" id="t-ccy"></div>
+      <div class="tabs" id="t-range"></div>
+    </div>
+    <div class="legend" id="legend"></div>
+    <div id="chart"></div>
+  </section>
+
+  <section>
+    <h2>設定 <small>只存在這台裝置的瀏覽器</small></h2>
+    <details>
+      <summary>網銀讓分</summary>
+      <p class="note">線上換匯的優惠，每 1 外幣讓幾元台幣。只套用在即期：賣出價減、買入價加。</p>
+      <div class="form" id="disc" style="grid-template-columns:repeat(3,1fr);margin-top:.5rem"></div>
+    </details>
+    <details id="custom-box">
+      <summary>其他銀行報價（手動輸入）</summary>
+      <p class="note">填入另一家的牌告，套利掃描與計算機會一起算。沒掛牌的欄位留空。手動輸入的報價不會自動更新，用完記得刪。</p>
+      <div id="custom"></div>
+      <button class="btn" id="add-custom" style="margin-top:.7rem">＋ 新增一家</button>
+    </details>
+  </section>
+
+  <footer>
+    牌告來源：臺灣銀行。市場中價：Yahoo Finance（日圓、歐元兌台幣由美元交叉盤合成），僅供參考，非可成交價。
+    本頁不構成投資建議。<a href="index.html">盤前分析</a>
+  </footer>
+</div>
+
+<script>
+"use strict";
+const FOREIGN = ["USD", "JPY", "EUR"];
+const FIELDS = ["cash_buy", "cash_sell", "spot_buy", "spot_sell"];
+const CCY_NAME = { TWD:"台幣", USD:"美元", JPY:"日圓", EUR:"歐元" };
+const FRESH_MIN = 30;
+const DEMO = new URLSearchParams(location.search).has("demo");
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("fx." + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem("fx." + k, JSON.stringify(v)); } catch (e) { /* 無痕模式：這次有效就好 */ } },
+};
+
+const S = { latest:null, rows:[], ccy:"USD", range:30, sources:{}, names:{}, edges:[], cycles:[] };
+
+// ───────── 套利引擎：和 premarket/fx.py 是同一份邏輯，改一邊要改另一邊 ─────────
+function applyDiscount(q, d) {
+  const o = Object.assign({}, q);
+  if (!d) return o;
+  if (o.spot_sell) o.spot_sell -= d;
+  if (o.spot_buy) o.spot_buy += d;
+  return o;
+}
+function buildEdges(sources) {
+  const edges = [];
+  const add = (from, to, rate, how, source) => { if (rate > 0 && isFinite(rate)) edges.push({ from, to, rate, how, source }); };
+  for (const [src, quotes] of Object.entries(sources)) {
+    for (const [ccy, q] of Object.entries(quotes)) {
+      const { cash_buy:cb, cash_sell:cs, spot_buy:sb, spot_sell:ss } = q;
+      const acct = ccy + ".acct@" + src, cash = ccy + ".cash";
+      if (ss) add("TWD", acct, 1 / ss, "即期賣出", src);
+      if (sb) add(acct, "TWD", sb, "即期買入", src);
+      if (cs) add("TWD", cash, 1 / cs, "現鈔賣出", src);
+      if (cb) add(cash, "TWD", cb, "現鈔買入", src);
+      if (ss && cs) add(acct, cash, ss / cs, "提領現鈔", src);
+      if (sb && cb) add(cash, acct, cb / sb, "存入現鈔", src);
+    }
+  }
+  return edges;
+}
+function walk(edges, start, goal, maxLen) {
+  const byFrom = {};
+  for (const e of edges) (byFrom[e.from] = byFrom[e.from] || []).push(e);
+  const found = [];
+  (function dfs(node, factor, steps, seen) {
+    for (const e of byFrom[node] || []) {
+      const f = factor * e.rate;
+      if (e.to === goal) { found.push({ factor:f, steps:steps.concat(e) }); continue; }
+      if (seen.has(e.to) || steps.length + 1 >= maxLen) continue;
+      dfs(e.to, f, steps.concat(e), new Set(seen).add(e.to));
+    }
+  })(start, 1, [], new Set([start]));
+  // 倍率相同的只留步數最少的那條（「買即期再提現鈔」和「直接買現鈔」是同一個價）
+  found.sort((a, b) => b.factor - a.factor || a.steps.length - b.steps.length);
+  const out = [];
+  for (const p of found) if (!out.length || Math.abs(p.factor / out[out.length - 1].factor - 1) > 1e-9) out.push(p);
+  return out;
+}
+const bestCycles = (edges, top = 8) => walk(edges, "TWD", "TWD", 6).slice(0, top).map((p) => Object.assign(p, { bp:(p.factor - 1) * 1e4 }));
+const bestPaths = (edges, a, b, top = 4) => walk(edges, a, b, 5).slice(0, top);
+
+// ───────── 小工具 ─────────
+const mid = (a, b) => (a && b ? (a + b) / 2 : null);
+const dp = (ccy) => (ccy === "JPY" ? 4 : 3);
+const fmt = (v, ccy) => (v == null ? "—" : v.toFixed(dp(ccy)));
+const bp = (v, d = 1) => (v == null ? "—" : (v > 0 ? "+" : "") + v.toFixed(d));
+const sign = (v) => (v > 0 ? "pos" : v < 0 ? "neg" : "");
+const hhmm = (iso) => (iso ? iso.slice(5, 10).replace("-", "/") + " " + iso.slice(11, 16) : "—");
+const minutesApart = (a, b) => (a && b ? Math.abs(new Date(a) - new Date(b)) / 60000 : null);
+function nodeLabel(n) {
+  if (n === "TWD") return "台幣";
+  const [ccy, rest] = n.split(".");
+  if (rest === "cash") return CCY_NAME[ccy] + "現鈔";
+  return CCY_NAME[ccy] + "帳戶·" + (S.names[rest.split("@")[1]] || rest.split("@")[1]);
+}
+function stepsHtml(start, steps) {
+  let h = "<span>" + esc(nodeLabel(start)) + "</span>";
+  for (const s of steps) h += '<span class="how">─' + esc(s.how) + "→</span><span>" + esc(nodeLabel(s.to)) + "</span>";
+  return '<div class="steps">' + h + "</div>";
+}
+function dailyStats(src, ccy, days = 90) {
+  const daily = new Map();
+  for (const r of S.rows) if (r[1] === src && r[2] === ccy && r[6]) daily.set(r[0].slice(0, 10), r[6]);
+  const cutoff = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10);
+  const vals = [...daily].filter(([d]) => d >= cutoff).sort().map(([, v]) => v);
+  if (vals.length < 2) return null;
+  const cur = vals[vals.length - 1], prev = vals[vals.length - 2];
+  const low = Math.min(...vals), high = Math.max(...vals);
+  return { days:vals.length, low, high, pos: high > low ? (cur - low) / (high - low) : 0.5, chg:(cur / prev - 1) * 100 };
+}
+
+// ───────── 組資料 ─────────
+function rebuild() {
+  const L = S.latest || {};
+  const disc = store.get("discount", null) || (L.discount && L.discount.bot) || {};
+  S.sources = {}; S.names = {}; S.raw = {}; S.board = {};
+  for (const [src, v] of Object.entries(L.sources || {})) {
+    S.raw[src] = v.quotes; S.names[src] = v.name; S.board[src] = v.board_time;
+    S.sources[src] = {};
+    for (const [ccy, q] of Object.entries(v.quotes)) S.sources[src][ccy] = applyDiscount(q, src === "bot" ? +disc[ccy] || 0 : 0);
+  }
+  for (const c of store.get("custom", [])) {
+    const quotes = {};
+    for (const ccy of FOREIGN) {
+      const q = {};
+      for (const f of FIELDS) { const v = parseFloat((c.quotes[ccy] || {})[f]); q[f] = v > 0 ? v : null; }
+      if (FIELDS.some((f) => q[f])) quotes[ccy] = q;
+    }
+    if (Object.keys(quotes).length) { S.sources[c.id] = quotes; S.raw[c.id] = quotes; S.names[c.id] = c.name || "自訂"; }
+  }
+  S.edges = buildEdges(S.sources);
+  S.cycles = bestCycles(S.edges);
+  window.__fx = { cycles:S.cycles, edges:S.edges };
+}
+
+// ───────── 繪製 ─────────
+function renderMeta() {
+  const L = S.latest || {};
+  const bot = (L.sources || {}).bot;
+  const mk = (L.market || {}).USDTWD;
+  $("meta").innerHTML =
+    "<span>牌告 " + (bot ? hhmm(bot.board_time) : "未取得") + "</span><span>市場中價 " + (mk ? hhmm(mk.time) : "未取得") + "</span>" +
+    (DEMO ? '<span class="pill">示範資料</span>' : "");
+  const msg = [];
+  if (DEMO) msg.push("這是示範資料，數字是編的，用來看版面與算法。拿掉網址的 ?demo 就是實際資料。");
+  else if (!bot) msg.push("還沒有抓到臺灣銀行的牌告。可以先在下方「其他銀行報價」手動輸入，套利掃描與計算機照樣能用。");
+  else if (bot.stale) msg.push("最近一次沒抓到臺灣銀行牌告，以下是 " + hhmm(bot.board_time) + " 的舊牌告。");
+  $("banner").textContent = msg.join(" ");
+  $("banner").classList.toggle("show", msg.length > 0);
+}
+
+function renderQuotes() {
+  const market = (S.latest || {}).market || {};
+  let h = "";
+  for (const src of Object.keys(S.sources)) {
+    for (const ccy of FOREIGN) {
+      const q = S.sources[src][ccy], raw = (S.raw[src] || {})[ccy];
+      if (!q) continue;
+      const mk = market[ccy + "TWD"], m = mid(q.spot_buy, q.spot_sell);
+      const spotSp = m ? (q.spot_sell - q.spot_buy) / m * 100 : null;
+      const cm = mid(q.cash_buy, q.cash_sell);
+      const cashSp = cm ? (q.cash_sell - q.cash_buy) / cm * 100 : null;
+      const dev = mk && m ? (m / mk.price - 1) * 1e4 : null;
+      const gap = minutesApart(S.board[src], mk && mk.time);
+      let lag = "";
+      if (mk && m && gap != null && gap <= FRESH_MIN) {
+        if (mk.price > q.spot_sell) lag = '<span class="pill pos">牌告滯後 ' + ((mk.price / q.spot_sell - 1) * 1e4).toFixed(1) + "bp・向銀行買有利</span>";
+        else if (mk.price < q.spot_buy) lag = '<span class="pill pos">牌告滯後 ' + ((q.spot_buy / mk.price - 1) * 1e4).toFixed(1) + "bp・賣給銀行有利</span>";
+      }
+      const st = dailyStats(src, ccy);
+      const adj = (f) => (raw && raw[f] && Math.abs(raw[f] - q[f]) > 1e-9 ? "<small>讓分後</small>" : "");
+      h += '<div class="q"><div class="q-head"><div class="q-ccy">' + ccy + "<span>" + CCY_NAME[ccy] + "・" + esc(S.names[src]) + "</span></div>" +
+        '<div class="q-chg num ' + (st ? sign(st.chg) : "") + '">' + (st ? "較前日 " + bp(st.chg, 2) + "%" : "") + "</div></div>" +
+        '<div class="q-grid"><div></div><div class="h">銀行買入（你賣）</div><div class="h">銀行賣出（你買）</div>' +
+        '<div class="r">即期</div><div class="v num">' + fmt(q.spot_buy, ccy) + adj("spot_buy") + '</div><div class="v num">' + fmt(q.spot_sell, ccy) + adj("spot_sell") + "</div>" +
+        '<div class="r">現鈔</div><div class="v num">' + fmt(q.cash_buy, ccy) + '</div><div class="v num">' + fmt(q.cash_sell, ccy) + "</div></div>" +
+        '<div class="q-foot"><span>即期價差 <b class="num">' + (spotSp == null ? "—" : spotSp.toFixed(2) + "%") + "</b></span>" +
+        '<span>現鈔價差 <b class="num">' + (cashSp == null ? "—" : cashSp.toFixed(2) + "%") + "</b></span>" +
+        (mk ? '<span>市場中價 <b class="num">' + mk.price.toFixed(dp(ccy) + 1) + "</b></span>" : "") +
+        (dev == null ? "" : '<span>牌告中價偏離 <b class="num">' + bp(dev) + "bp</b></span>") + lag + "</div>" +
+        (st ? '<div class="range"><span class="num">' + fmt(st.low, ccy) + '</span><div class="bar" role="img" aria-label="即期賣出價在近 ' + st.days +
+              " 日區間的 " + Math.round(st.pos * 100) + '% 位置"><div class="dot" style="left:' + (st.pos * 100).toFixed(1) + '%"></div></div><span class="num">' +
+              fmt(st.high, ccy) + "</span></div>" + '<div class="note" style="margin:.15rem 0 0">即期賣出價在近 ' + st.days + " 日高低區間的位置（越靠左越便宜）</div>" : "") +
+        "</div>";
+    }
+  }
+  $("quotes").innerHTML = h || '<div class="empty">目前沒有任何牌告。</div>';
+}
+
+function renderArb() {
+  if (!S.cycles.length) { $("arb").innerHTML = '<div class="empty">沒有報價可以計算。</div>'; $("cross").innerHTML = ""; return; }
+  const best = S.cycles[0];
+  const head = best.bp > 0
+    ? '<div class="big num pos">' + bp(best.bp) + ' bp</div><div>帳面上有套利空間。下單前先確認兩邊報價都還是現在這個數字，並把固定費用算進去。</div>'
+    : '<div class="big num">' + bp(best.bp) + ' bp</div><div class="muted">目前沒有套利空間。繞一圈最少賠這麼多，這也是你來回換匯的最低成本。</div>';
+  let h = '<div class="verdict">' + head + '<ul class="cyc">';
+  for (const c of S.cycles.slice(0, 5)) h += '<li><span class="bp num ' + (c.bp > 0 ? "pos" : "") + '">' + bp(c.bp) + "</span>" + stepsHtml("TWD", c.steps) + "</li>";
+  $("arb").innerHTML = h + "</ul></div>";
+
+  const market = (S.latest || {}).market || {};
+  let rows = "";
+  for (const src of Object.keys(S.sources)) {
+    for (const pair of ["USDJPY", "EURUSD", "EURJPY"]) {
+      const b = S.sources[src][pair.slice(0, 3)], q = S.sources[src][pair.slice(3)], mk = market[pair];
+      if (!b || !q) continue;
+      const mb = mid(b.spot_buy, b.spot_sell), mq = mid(q.spot_buy, q.spot_sell);
+      if (!mb || !mq) continue;
+      const implied = mb / mq, d = pair.endsWith("JPY") ? 2 : 4;
+      const diff = mk ? (implied / mk.price - 1) * 1e4 : null;
+      const cost = mk ? (1 - b.spot_buy / q.spot_sell / mk.price) * 1e4 : null;
+      rows += "<tr><td>" + pair.slice(0, 3) + "/" + pair.slice(3) + ' <span class="muted">' + esc(S.names[src]) + '</span></td><td class="num">' + implied.toFixed(d) +
+        '</td><td class="num">' + (mk ? mk.price.toFixed(d) : "—") + '</td><td class="num">' + bp(diff) + '</td><td class="num">' + (cost == null ? "—" : cost.toFixed(1)) + "</td></tr>";
+    }
+  }
+  $("cross").innerHTML = rows
+    ? "<table><thead><tr><th>交叉匯率</th><th>牌告隱含</th><th>國際盤</th><th>差 bp</th><th>實際成本 bp</th></tr></thead><tbody>" + rows + "</tbody></table>"
+    : "";
+}
+
+function nodeList() {
+  const nodes = new Set(["TWD"]);
+  for (const e of S.edges) { nodes.add(e.from); nodes.add(e.to); }
+  return [...nodes].sort((a, b) => (a === "TWD" ? -1 : b === "TWD" ? 1 : a.localeCompare(b)));
+}
+function renderCalcOptions() {
+  const nodes = nodeList();
+  for (const [id, def] of [["c-from", "TWD"], ["c-to", nodes.find((n) => n.startsWith("JPY.acct")) || nodes[1]]]) {
+    const keep = nodes.includes($(id).value) ? $(id).value : def;
+    $(id).innerHTML = nodes.map((n) => '<option value="' + esc(n) + '">' + esc(nodeLabel(n)) + "</option>").join("");
+    if (keep) $(id).value = keep;
+  }
+}
+function renderCalc() {
+  const a = $("c-from").value, b = $("c-to").value, amt = parseFloat($("c-amt").value.replace(/,/g, ""));
+  if (!a || !b) { $("calc").innerHTML = ""; return; }
+  if (a === b) { $("calc").innerHTML = '<div class="result muted">起點和終點一樣。</div>'; return; }
+  if (!(amt > 0)) { $("calc").innerHTML = '<div class="result muted">請輸入金額。</div>'; return; }
+  const paths = bestPaths(S.edges, a, b);
+  if (!paths.length) { $("calc").innerHTML = '<div class="result muted">這兩者之間沒有可走的路徑（缺少報價）。</div>'; return; }
+  const market = (S.latest || {}).market || {};
+  const ccyOf = (n) => n.slice(0, 3);
+  const val = (n) => (n === "TWD" ? 1 : market[ccyOf(n) + "TWD"] ? market[ccyOf(n) + "TWD"].price : null);
+  const cost = (f) => (val(a) && val(b) ? (1 - f * val(b) / val(a)) * 1e4 : null);
+  const outFmt = (v) => v.toLocaleString("zh-TW", { maximumFractionDigits: ccyOf(b) === "JPY" || b === "TWD" ? 0 : 2 });
+  const p = paths[0], c0 = cost(p.factor);
+  let h = '<div class="result"><div class="big num">' + outFmt(amt * p.factor) + " <span style=\"font-size:.9rem;font-weight:400\">" + esc(nodeLabel(b)) + "</span></div>" +
+    stepsHtml(a, p.steps) + '<div class="note">' + (c0 == null ? "" : "比市場中價多付 " + c0.toFixed(1) + " bp（約 " +
+    (amt * val(a) * c0 / 1e4).toLocaleString("zh-TW", { maximumFractionDigits:0 }) + " 元台幣）") + "</div>";
+  for (const q of paths.slice(1)) {
+    h += '<div class="alt"><span class="num">' + outFmt(amt * q.factor) + '</span> <span class="muted num">（少 ' + outFmt(amt * (p.factor - q.factor)) + "）</span>" + stepsHtml(a, q.steps) + "</div>";
+  }
+  $("calc").innerHTML = h + "</div>";
+}
+
+// ───────── 走勢圖 ─────────
+function tabs(id, items, cur, on) {
+  $(id).innerHTML = items.map(([v, t]) => '<button type="button" data-v="' + v + '" aria-pressed="' + (String(v) === String(cur)) + '">' + t + "</button>").join("");
+  $(id).onclick = (e) => { const b = e.target.closest("button"); if (b) on(b.dataset.v); };
+}
+function renderChart() {
+  tabs("t-ccy", FOREIGN.map((c) => [c, c]), S.ccy, (v) => { S.ccy = v; renderChart(); });
+  tabs("t-range", [[1, "1 日"], [7, "7 日"], [30, "30 日"], [90, "90 日"]], S.range, (v) => { S.range = +v; renderChart(); });
+  const since = Date.now() - S.range * 864e5;
+  const pick = (src, i) => S.rows.filter((r) => r[1] === src && r[2] === S.ccy && r[i] != null && +new Date(r[0]) >= since).map((r) => [+new Date(r[0]), r[i]]);
+  const series = [
+    { name:"即期賣出（你買）", color:"var(--accent)", step:true, pts:pick("bot", 6) },
+    { name:"即期買入（你賣）", color:"var(--accent2)", step:true, pts:pick("bot", 5) },
+    { name:"市場中價", color:"var(--muted)", step:false, dash:"3 3", pts:pick("mkt", 5) },
+  ].filter((s) => s.pts.length);
+  const legend = (vals) => series.map((s, i) => "<span><i style=\"background:" + s.color + '"></i>' + s.name +
+    (vals ? ' <b class="num" style="color:var(--ink)">' + (vals[i] == null ? "—" : vals[i].toFixed(dp(S.ccy) + (s.step ? 0 : 1))) + "</b>" : "") + "</span>").join("");
+  const all = series.flatMap((s) => s.pts);
+  if (all.length < 2) { $("legend").innerHTML = ""; $("chart").innerHTML = '<div class="empty">這段期間的資料還不夠畫圖，累積幾次更新後就會出現。</div>'; return; }
+
+  const W = Math.max(300, Math.round($("chart").clientWidth) || 720), H = W < 500 ? 220 : 260, L = 4, R = 50, T = 10, B = 22;
+  const x0 = Math.min(...all.map((p) => p[0])), x1 = Math.max(Date.now(), ...all.map((p) => p[0]));
+  let y0 = Math.min(...all.map((p) => p[1])), y1 = Math.max(...all.map((p) => p[1]));
+  const pad = (y1 - y0) * 0.08 || y1 * 0.002; y0 -= pad; y1 += pad;
+  const X = (t) => L + (t - x0) / (x1 - x0 || 1) * (W - L - R), Y = (v) => T + (y1 - v) / (y1 - y0) * (H - T - B);
+  let g = "";
+  for (let i = 0; i <= 4; i++) {
+    const v = y0 + (y1 - y0) * i / 4, y = Y(v).toFixed(1);
+    g += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y + '" y2="' + y + '" stroke="var(--rule)"/><text x="' + (W - R + 6) + '" y="' + (+y + 3) + '">' + v.toFixed(dp(S.ccy)) + "</text>";
+  }
+  const tl = (t) => { const d = new Date(t); return S.range <= 1 ? String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0") : (d.getMonth() + 1) + "/" + d.getDate(); };
+  g += '<text x="' + L + '" y="' + (H - 6) + '">' + tl(x0) + '</text><text x="' + (W - R) + '" y="' + (H - 6) + '" text-anchor="end">' + tl(x1) + "</text>";
+  for (const s of series) {
+    let d = "";
+    s.pts.forEach(([t, v], i) => {
+      const x = X(t).toFixed(1), y = Y(v).toFixed(1);
+      d += i === 0 ? "M" + x + " " + y : s.step ? "H" + x + "V" + y : "L" + x + " " + y;
+    });
+    if (s.step) d += "H" + X(x1).toFixed(1);  // 牌告在下一次改價前都有效
+    g += '<path d="' + d + '" fill="none" stroke="' + s.color + '" stroke-width="2" stroke-linejoin="round"' + (s.dash ? ' stroke-dasharray="' + s.dash + '"' : "") + "/>";
+  }
+  g += '<line id="xh" y1="' + T + '" y2="' + (H - B) + '" stroke="var(--muted)" stroke-width="1" visibility="hidden"/>';
+  $("chart").innerHTML = '<svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="' + S.ccy + ' 兌台幣走勢">' + g + "</svg>";
+  $("legend").innerHTML = legend(null);
+
+  const svg = $("chart").firstChild, xh = svg.querySelector("#xh");
+  const at = (s, t) => { let v = null; for (const p of s.pts) { if (p[0] <= t) v = p[1]; else break; } return v; };
+  const move = (ev) => {
+    const r = svg.getBoundingClientRect();
+    const px = Math.min(W - R, Math.max(L, (ev.clientX - r.left) / r.width * W));
+    const t = x0 + (px - L) / (W - L - R) * (x1 - x0), d = new Date(t);
+    xh.setAttribute("x1", px); xh.setAttribute("x2", px); xh.setAttribute("visibility", "visible");
+    $("legend").innerHTML = '<span class="num">' + (d.getMonth() + 1) + "/" + d.getDate() + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0") + "</span>" + legend(series.map((s) => at(s, t)));
+  };
+  svg.addEventListener("pointermove", move);
+  svg.addEventListener("pointerdown", move);
+  svg.addEventListener("pointerleave", () => { xh.setAttribute("visibility", "hidden"); $("legend").innerHTML = legend(null); });
+}
+
+// ───────── 設定 ─────────
+function renderSettings() {
+  const L = S.latest || {};
+  const disc = store.get("discount", null) || (L.discount && L.discount.bot) || {};
+  $("disc").innerHTML = FOREIGN.map((c) => '<div><label for="d-' + c + '">' + c + '</label><input id="d-' + c + '" class="num" inputmode="decimal" placeholder="0" value="' + (disc[c] || "") + '"></div>').join("");
+  $("disc").oninput = () => {
+    const d = {};
+    for (const c of FOREIGN) { const v = parseFloat($("d-" + c).value); if (v > 0) d[c] = v; }
+    store.set("discount", d); refresh(false);
+  };
+  const list = store.get("custom", []);
+  const label = { cash_buy:"現鈔買入", cash_sell:"現鈔賣出", spot_buy:"即期買入", spot_sell:"即期賣出" };
+  $("custom").innerHTML = list.map((c, i) =>
+    '<div class="cq" data-i="' + i + '"><div style="display:flex;gap:.5rem"><input data-k="name" placeholder="銀行名稱" aria-label="銀行名稱" value="' + esc(c.name || "") +
+    '"><button type="button" class="btn danger" data-del>刪除</button></div><div class="cq-grid"><div></div>' + FIELDS.map((f) => '<div class="h">' + label[f] + "</div>").join("") +
+    FOREIGN.map((ccy) => "<div>" + ccy + "</div>" + FIELDS.map((f) => '<input class="num" inputmode="decimal" data-c="' + ccy + '" data-f="' + f + '" aria-label="' + ccy + " " + label[f] +
+      '" value="' + esc((c.quotes[ccy] || {})[f] || "") + '">').join("")).join("") + "</div></div>").join("");
+  $("custom").oninput = (e) => {
+    const box = e.target.closest(".cq"); if (!box) return;
+    const cur = store.get("custom", []), c = cur[+box.dataset.i]; if (!c) return;
+    if (e.target.dataset.k === "name") c.name = e.target.value;
+    else { (c.quotes[e.target.dataset.c] = c.quotes[e.target.dataset.c] || {})[e.target.dataset.f] = e.target.value; }
+    store.set("custom", cur); refresh(false);
+  };
+  $("custom").onclick = (e) => {
+    if (!e.target.matches("[data-del]")) return;
+    const cur = store.get("custom", []); cur.splice(+e.target.closest(".cq").dataset.i, 1);
+    store.set("custom", cur); refresh(true);
+  };
+  $("add-custom").onclick = () => {
+    const cur = store.get("custom", []);
+    cur.push({ id:"c" + Date.now().toString(36), name:"", quotes:{} });
+    store.set("custom", cur); refresh(true);
+  };
+}
+
+function refresh(withSettings) {
+  rebuild(); renderMeta(); renderQuotes(); renderArb(); renderCalcOptions(); renderCalc(); renderChart();
+  if (withSettings) renderSettings();
+}
+
+// ───────── 資料載入 ─────────
+function demoData() {
+  // 固定種子的亂數漫步：每次打開示範都長一樣，截圖與自動檢查才比得起來。
+  let seed = 20261116; const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff) - 0.5;
+  const base = { USD:[32.965, 0.05, 0.335], JPY:[0.2063, 0.002, 0.0048], EUR:[36.30, 0.2, 0.47] };  // 中價, 即期半價差, 現鈔半價差
+  const now = new Date(); now.setSeconds(0, 0);
+  const iso = (d) => new Date(d.getTime() + 8 * 36e5).toISOString().slice(0, 19) + "+08:00";
+  const rows = [], last = {};
+  for (const ccy of FOREIGN) {
+    const [m0, hs, hc] = base[ccy], n = 90 + 6 * 5;
+    const path = []; let m = m0;
+    for (let i = 0; i < n; i++) { path.push(m); m *= 1 - rnd() * (i < n - 90 ? 0.0008 : 0.006); }  // 由現在往回推：先是盤中，再是每日
+    path.reverse();
+    path.forEach((mm, i) => {
+      const d = new Date(now), intraday = i >= 90;
+      if (intraday) d.setMinutes(d.getMinutes() - (n - 1 - i) * 25); else { d.setUTCDate(d.getUTCDate() - (90 - i)); d.setUTCHours(7, 30); }  // 台北 15:30
+      const r = (v) => +v.toFixed(dp(ccy));
+      const q = { cash_buy:r(mm - hc), cash_sell:r(mm + hc), spot_buy:r(mm - hs), spot_sell:r(mm + hs) };
+      rows.push([iso(d), "bot", ccy, q.cash_buy, q.cash_sell, q.spot_buy, q.spot_sell]);
+      rows.push([iso(d), "mkt", ccy, null, null, +(mm * (1 + rnd() * 0.0006)).toFixed(6), null]);
+      last[ccy] = q;
+    });
+  }
+  rows.sort((a, b) => (a[0] < b[0] ? -1 : 1));
+  const t = iso(now), px = (c) => rows.filter((r) => r[1] === "mkt" && r[2] === c).pop()[5];
+  const market = { USDTWD:{ price:px("USD"), time:t }, JPYTWD:{ price:px("JPY"), time:t }, EURTWD:{ price:px("EUR"), time:t } };
+  market.USDJPY = { price:market.USDTWD.price / market.JPYTWD.price, time:t };
+  market.EURUSD = { price:market.EURTWD.price / market.USDTWD.price, time:t };
+  market.EURJPY = { price:market.EURTWD.price / market.JPYTWD.price, time:t };
+  return { latest:{ fetched_at:t, sources:{ bot:{ name:"臺灣銀行", board_time:t, quotes:last } }, market, missing:[], discount:{} }, rows };
+}
+async function load() {
+  if (DEMO) { const d = demoData(); S.latest = d.latest; S.rows = d.rows; refresh(true); return; }
+  try {
+    const get = (f) => fetch("data/fx/" + f + "?t=" + Date.now(), { cache:"no-store" }).then((r) => { if (!r.ok) throw new Error(f + " " + r.status); return r.json(); });
+    const [latest, hist] = await Promise.all([get("latest.json"), get("history.json").catch(() => ({ rows:[] }))]);
+    S.latest = latest; S.rows = hist.rows || [];
+    refresh(!S.loaded); S.loaded = true;
+  } catch (e) {
+    if (!S.latest) { refresh(true); $("meta").textContent = "資料載入失敗"; $("banner").textContent = "讀不到 data/fx/latest.json（" + e.message + "）。排程還沒跑過第一次的話這是正常的。"; $("banner").classList.add("show"); }
+  }
+}
+$("c-from").onchange = $("c-to").onchange = $("c-amt").oninput = renderCalc;
+let rz; addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => S.latest && renderChart(), 150); });
+load();
+if (!DEMO) setInterval(load, 5 * 60 * 1000);
+</script>
+</body>
+</html>
