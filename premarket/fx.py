@@ -1,5 +1,5 @@
 """
-外匯追蹤：臺灣銀行牌告（現鈔／即期）＋國際市場中價 → 價差、偏離、套利路徑。
+外匯追蹤：臺灣銀行、玉山銀行牌告（現鈔／即期）＋國際市場中價 → 價差、偏離、套利路徑。
 
     python -m premarket.fx              # 抓一次，寫 docs/data/fx/
     python -m premarket.fx --dry-run    # 只抓、只印，不寫檔
@@ -47,9 +47,11 @@ TPE = timezone(timedelta(hours=8))
 
 FOREIGN = ("USD", "JPY", "EUR")
 FIELDS = ("cash_buy", "cash_sell", "spot_buy", "spot_sell")
-SOURCE_NAMES = {"bot": "臺灣銀行"}
+SOURCE_NAMES = {"bot": "臺灣銀行", "esun": "玉山銀行"}
+CCY_NAMES = {"TWD": "台幣", "USD": "美元", "JPY": "日圓", "EUR": "歐元"}
 
 BOT_CSV = "https://rate.bot.com.tw/xrt/flcsv/0/day"
+ESUN_API = "https://www.esunbank.com/api/client/ExchangeRate/LastRateInfo"
 # 向 Yahoo 抓的四個；JPYTWD、EURTWD 由它們合成（見 fetch_market）。
 YAHOO_SYMBOLS = ("USDTWD", "USDJPY", "EURUSD", "EURJPY")
 # 前三個是「一單位外幣值多少台幣」，用來對牌告；後三個是交叉盤，用來對牌告隱含的交叉匯率。
@@ -58,6 +60,9 @@ MARKET_SYMBOLS = ("USDTWD", "JPYTWD", "EURTWD", "USDJPY", "EURUSD", "EURJPY")
 # 牌告與市場報價的時間差超過這個分鐘數，就不判「滯後」——
 # 收盤後牌告停在 16:00，國際盤繼續走，那個差距不是機會，是銀行下班了。
 FRESH_MIN = 30
+# 市場中價超出牌告不到這麼多 bp 就不算滯後。Yahoo 的中價是參考價，USD/TWD 一分鐘內
+# 自己就會跳 3bp 左右；玉山美元套用網銀優惠後離中價只有 6bp，不設門檻會一直閃。
+LAG_MIN_BP = 3.0
 # 歷史：最近這幾天保留盤中每一筆，更早的每天只留最後一筆。
 INTRADAY_DAYS = 10
 KEEP_DAYS = 400
@@ -65,7 +70,10 @@ KEEP_DAYS = 400
 HEARTBEAT_MIN = 55
 
 DEFAULT_CONFIG: dict[str, Any] = {
-    "discount": {},        # {"bot": {"USD": 0.03}}：網銀讓分，每單位外幣讓幾元台幣
+    "sources": ["bot", "esun"],  # 要抓哪幾家
+    # {"bot": {"USD": 0.03}}：網銀讓分，每單位外幣讓幾元台幣。
+    # 玉山的 API 自己會帶當下的網銀優惠，這裡有寫才會蓋掉它（寫 0 = 不套用優惠）。
+    "discount": {},
     "alerts": [],          # [{"ccy":"JPY","field":"spot_sell","op":"<=","value":0.2}]
     "arb_alert_bp": None,  # 繞一圈的報酬 ≥ 這個 bp 就通知；None = 不通知
     "lag_alert_bp": None,  # 市場中價超出牌告買賣價 ≥ 這個 bp 就通知；None = 不通知
@@ -135,6 +143,61 @@ def fetch_bot() -> dict | None:
     return _fetch("GET", BOT_CSV, parse)
 
 
+def parse_esun(data: dict) -> dict:
+    """
+    玉山牌告 API 的回應 → {"quotes": {...}, "board_time": ISO, "bonus": {"USD": 0.031, …}}
+
+    每筆長這樣（即期是數字，現鈔與優惠是字串，沒掛牌的現鈔是空字串）：
+        {"CCY":"USD/TWD","BBoardRate":32.88,"SBoardRate":32.98,
+         "CashBBoardRate":"32.63","CashSBoardRate":"33.18","Bonus":"0.031",
+         "UpdateTime":"/Date(1794837560000)/"}
+    Bonus 是銀行公布的網銀／App 換匯讓分：BuyIncreaseRate = 買入 + Bonus、
+    SellDecreaseRate = 賣出 − Bonus。只有和這兩個優惠價對得起來的 Bonus 才採用。
+
+    最外層的 DiscontFlag 不要拿來當開關：實測連打八次，它在 "T" 和 "" 之間
+    隨機跳（看起來是不同節點回的），而 Bonus 與優惠價完全沒變。
+    """
+    quotes: dict[str, dict] = {}
+    bonus: dict[str, float] = {}
+    times: list[int] = []
+    for r in data["Rates"]:
+        ccy, _, base = str(r.get("CCY", "")).partition("/")
+        if ccy not in FOREIGN or base != "TWD":
+            continue
+        q = {
+            "cash_buy": _pos(str(r.get("CashBBoardRate") or "")),
+            "cash_sell": _pos(str(r.get("CashSBoardRate") or "")),
+            "spot_buy": _pos(str(r.get("BBoardRate") or "")),
+            "spot_sell": _pos(str(r.get("SBoardRate") or "")),
+        }
+        if not (q["spot_buy"] or q["cash_buy"]):
+            continue
+        quotes[ccy] = q
+        b = _pos(str(r.get("Bonus") or ""))
+        better_buy = _pos(str(r.get("BuyIncreaseRate") or ""))
+        if b and q["spot_buy"] and better_buy and abs(q["spot_buy"] + b - better_buy) < 1e-6:
+            bonus[ccy] = b
+        m = re.search(r"(\d{10,})", str(r.get("UpdateTime") or ""))
+        if m:
+            times.append(int(m.group(1)))
+    if not quotes:
+        raise ValueError("玉山的回應裡找不到 USD/JPY/EUR")
+    board = datetime.fromtimestamp(max(times) / 1000, TPE).replace(microsecond=0).isoformat() if times else None
+    return {"quotes": quotes, "board_time": board, "bonus": bonus}
+
+
+def fetch_esun() -> dict | None:
+    def parse(r: requests.Response) -> dict:
+        if "json" not in r.headers.get("Content-Type", "").lower():
+            raise ChallengeError("玉山回傳的不是 JSON")
+        return parse_esun(r.json())
+
+    return _fetch("POST", ESUN_API, parse, json={})
+
+
+FETCHERS = {"bot": fetch_bot, "esun": fetch_esun}
+
+
 def fetch_market() -> dict[str, dict]:
     """
     Yahoo 匯率中價（1 分鐘線最後一筆）。回 {"USDTWD": {"price":…, "time": ISO}, …}。
@@ -201,10 +264,31 @@ def apply_discount(q: dict, d: float | None) -> dict:
         return dict(q)
     out = dict(q)
     if out.get("spot_sell"):
-        out["spot_sell"] = out["spot_sell"] - d
+        out["spot_sell"] = round(out["spot_sell"] - d, 6)
     if out.get("spot_buy"):
-        out["spot_buy"] = out["spot_buy"] + d
+        out["spot_buy"] = round(out["spot_buy"] + d, 6)
     return out
+
+
+def merge_discount(auto: dict, cfg: dict) -> dict:
+    """銀行自己公布的優惠（auto）打底，fx_config.json 有寫的幣別蓋過去。"""
+    out: dict[str, dict] = {}
+    for src in set(auto) | set(cfg):
+        merged = {**(auto.get(src) or {}), **(cfg.get(src) or {})}
+        if merged:
+            out[src] = merged
+    return out
+
+
+def node_label(node: str) -> str:
+    """"USD.acct@esun" → "美元帳戶·玉山銀行"。提醒文字用。"""
+    if node == "TWD":
+        return "台幣"
+    ccy, _, rest = node.partition(".")
+    if rest == "cash":
+        return CCY_NAMES.get(ccy, ccy) + "現鈔"
+    src = rest.partition("@")[2]
+    return f"{CCY_NAMES.get(ccy, ccy)}帳戶·{SOURCE_NAMES.get(src, src)}"
 
 
 def build_edges(sources: dict[str, dict[str, dict]]) -> list[dict]:
@@ -307,10 +391,9 @@ def quote_metrics(q: dict, mkt: dict | None, board_time: str | None) -> dict:
     if gap is None or gap > FRESH_MIN:
         return m
     # 市場中價跑到牌告之外：銀行還在用舊價。
-    if px > ss:
-        m["lag"] = {"side": "buy", "bp": round((px / ss - 1) * 1e4, 1)}   # 跟銀行買便宜
-    elif px < sb:
-        m["lag"] = {"side": "sell", "bp": round((sb / px - 1) * 1e4, 1)}  # 賣給銀行划算
+    side, over = ("buy", px / ss - 1) if px > ss else ("sell", sb / px - 1)  # buy = 跟銀行買便宜
+    if over * 1e4 >= LAG_MIN_BP:
+        m["lag"] = {"side": side, "bp": round(over * 1e4, 1)}
     return m
 
 
@@ -376,14 +459,17 @@ def check_alerts(cfg: dict, sources: dict, derived: dict) -> list[dict]:
         if ops[a["op"]](v, a["value"]):
             hits.append({
                 "key": f"px:{src}:{a['ccy']}:{a['field']}:{a['op']}:{a['value']}",
-                "text": f"{a['ccy']} {label.get(a['field'], a['field'])} {v:g}（門檻 {a['op']} {a['value']:g}）",
+                "text": f"{SOURCE_NAMES.get(src, src)} {a['ccy']} {label.get(a['field'], a['field'])} {v:g}"
+                        f"（門檻 {a['op']} {a['value']:g}）",
             })
 
     thr = cfg.get("arb_alert_bp")
     best = (derived.get("cycles") or [None])[0]
     if thr is not None and best and best["bp"] >= thr and best["bp"] > 0:
-        route = " → ".join(["TWD"] + [s["to"] for s in best["steps"]])
-        hits.append({"key": f"arb:{route}", "text": f"套利路徑 +{best['bp']:.1f}bp：{route}"})
+        key = "→".join(f"{s['to']}@{s['source']}" for s in best["steps"])
+        route = "台幣" + "".join(
+            f" →（{SOURCE_NAMES.get(s['source'], s['source'])}{s['how']}）{node_label(s['to'])}" for s in best["steps"])
+        hits.append({"key": f"arb:{key}", "text": f"套利路徑 +{best['bp']:.1f}bp：{route}"})
 
     thr = cfg.get("lag_alert_bp")
     if thr is not None:
@@ -393,7 +479,8 @@ def check_alerts(cfg: dict, sources: dict, derived: dict) -> list[dict]:
                 verb = "向銀行買" if lag["side"] == "buy" else "賣給銀行"
                 hits.append({
                     "key": f"lag:{row['source']}:{row['ccy']}:{lag['side']}",
-                    "text": f"{row['ccy']} 牌告滯後 {lag['bp']:.1f}bp（{verb}優於市場中價）",
+                    "text": f"{SOURCE_NAMES.get(row['source'], row['source'])} {row['ccy']} "
+                            f"牌告滯後 {lag['bp']:.1f}bp（{verb}優於市場中價）",
                 })
     return hits
 
@@ -480,12 +567,16 @@ def run(dry_run: bool = False, force: bool = False) -> int:
     missing: list[str] = []
     raw: dict[str, dict] = {}
     board_times: dict[str, str] = {}
-    bot = fetch_bot()
-    if bot:
-        raw["bot"] = bot["quotes"]
-        board_times["bot"] = bot["board_time"] or ts
-    else:
-        missing.append("bot")
+    auto_disc: dict[str, dict] = {}
+    for src in cfg.get("sources") or []:
+        got = FETCHERS[src]() if src in FETCHERS else None
+        if not got:
+            missing.append(src)
+            continue
+        raw[src] = got["quotes"]
+        board_times[src] = got["board_time"] or ts
+        if got.get("bonus"):
+            auto_disc[src] = got["bonus"]
     market = fetch_market()
     missing += [s for s in MARKET_SYMBOLS if s not in market]
 
@@ -494,7 +585,7 @@ def run(dry_run: bool = False, force: bool = False) -> int:
         return 1
 
     # 讓分只影響「算路徑」，存進歷史的是原始牌告。
-    disc = cfg.get("discount") or {}
+    disc = merge_discount(auto_disc, cfg.get("discount") or {})
     adjusted = {
         src: {ccy: apply_discount(q, (disc.get(src) or {}).get(ccy)) for ccy, q in qs.items()}
         for src, qs in raw.items()
@@ -533,20 +624,25 @@ def run(dry_run: bool = False, force: bool = False) -> int:
         log.info("最佳迴圈 %+.1f bp：%s", c["bp"], " → ".join(["TWD"] + [s["to"] for s in c["steps"]]))
     if missing:
         log.warning("沒抓到：%s", ", ".join(missing))
-        if os.environ.get("GITHUB_ACTIONS") and "bot" in missing:
-            # 這一輪照樣成功結束（市場中價還是會更新），但要在 Actions 頁面上看得到。
-            print("::warning::臺灣銀行牌告沒抓到，頁面會沿用上一次的牌告。連續出現請看 README 第十一節。")
+        banks = [SOURCE_NAMES[m] for m in missing if m in SOURCE_NAMES]
+        if os.environ.get("GITHUB_ACTIONS") and banks:
+            # 這一輪照樣成功結束（其他來源還是會更新），但要在 Actions 頁面上看得到。
+            print(f"::warning::{'、'.join(banks)}的牌告沒抓到，頁面會沿用上一次的牌告。連續出現請看 README 第十一節。")
 
     if dry_run:
         print(json.dumps(latest, ensure_ascii=False, indent=2))
         return 0
 
     # 牌告沒抓到時，頁面要繼續顯示上一次的牌告（並標示時間），不能被空的蓋掉。
-    if "bot" not in raw and (prev.get("sources") or {}).get("bot"):
-        latest["sources"]["bot"] = {**prev["sources"]["bot"], "stale": True}
+    prev_sources = prev.get("sources") or {}
+    for src in cfg.get("sources") or []:
+        if src not in raw and src in prev_sources:
+            latest["sources"][src] = {**prev_sources[src], "stale": True}
+    # 依設定檔的順序排好：頁面照這個順序排卡片，不能因為哪一家這輪沒抓到就換位置。
+    latest["sources"] = {s: latest["sources"][s] for s in cfg.get("sources") or [] if s in latest["sources"]}
 
-    # 牌告沒抓到的那幾輪不算「有變」，否則每 15 分鐘都會寫一次；交給下面的定時寫入。
-    changed = bool(raw) and {s: v["quotes"] for s, v in (prev.get("sources") or {}).items()} != raw
+    # 只比這一輪真的抓到的來源：沒抓到的不算「有變」，否則每 15 分鐘都會寫一次。
+    changed = any((prev_sources.get(s) or {}).get("quotes") != q for s, q in raw.items())
     age = _minutes_apart(prev.get("fetched_at"), ts)
     if not (force or fresh or changed or age is None or age >= HEARTBEAT_MIN):
         log.info("牌告沒變、距上次寫檔 %.0f 分鐘，這次不寫", age)
