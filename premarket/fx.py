@@ -16,8 +16,10 @@
    買進價；(b) 牌告滯後——國際盤已經動了，牌告還沒改，市場中價跑到
    牌告買賣價之外。(b) 不是無風險的（你得在別處用市場價平倉），但它是
    散戶實際上碰得到的訊號，所以單獨算出來。
-3. 比例成本之外的固定費用（現鈔存提最低手續費、跨行匯款郵電費）不在
-   路徑計算裡。金額小的時候它們才是主角，頁面與 README 都有註明。
+3. 兩家銀行的外幣帳戶之間靠「跨行匯款」相通，成本是設定檔裡的
+   transfer_cost_bp（把一次匯款的費用換算成佔交易金額的萬分之幾）。
+   現鈔存提的最低手續費這類固定費用不在路徑計算裡，金額小的時候
+   它們才是主角，頁面與 README 都有註明。
 """
 
 from __future__ import annotations
@@ -79,6 +81,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # 玉山的 API 自己會帶當下的網銀優惠，這裡有寫才會蓋掉它（寫 0 = 不套用優惠）。
     "discount": {},
     "alerts": [],          # [{"ccy":"JPY","field":"spot_sell","op":"<=","value":0.2}]
+    # 外幣從一家銀行匯到另一家的成本，佔交易金額的萬分之幾。匯款費是固定金額，
+    # 所以要配合你的單筆金額換算：費用 1,000 元、一次換 100 萬台幣 = 10bp。
+    # None = 不考慮跨行匯款，兩家之間只剩台幣與現鈔可以搬。
+    "transfer_cost_bp": 10,
     "arb_alert_bp": None,  # 繞一圈的報酬 ≥ 這個 bp 就通知；None = 不通知
     "lag_alert_bp": None,  # 市場中價超出牌告買賣價 ≥ 這個 bp 就通知；None = 不通知
 }
@@ -317,7 +323,9 @@ def synthesize_twd_crosses(mkt: dict[str, dict]) -> dict[str, dict]:
 #   TWD            台幣（現金與帳戶不分，轉來轉去幾乎不用錢）
 #   USD.cash       美元現鈔（哪家銀行領的都一樣）
 #   USD.acct@bot   放在臺銀外幣帳戶裡的美元（跨行搬動要匯費，所以每家各一個節點）
-# 邊是一次換匯，rate 是「1 單位起點換到幾單位終點」。
+# 邊是一次換匯或搬動，rate 是「1 單位起點換到幾單位終點」。
+# 兩家的外幣帳戶之間有一條「跨行匯款」的邊，rate = 1 − 匯款成本。少了它，
+# 「A 行即期買、B 行即期賣」這條最實際的套利路徑根本不在圖上，只剩現鈔可繞。
 # docs/fx.html 裡有一份一模一樣的 JS 版；改這裡要一起改那邊，
 # tools/check_fx_page.py 會比對兩邊算出來的最佳路徑。
 
@@ -355,9 +363,13 @@ def node_label(node: str) -> str:
     return f"{CCY_NAMES.get(ccy, ccy)}帳戶·{SOURCE_NAMES.get(src, src)}"
 
 
-def build_edges(sources: dict[str, dict[str, dict]]) -> list[dict]:
-    """sources = {"bot": {"USD": {cash_buy,…}, …}, …} → 邊的清單。"""
+def build_edges(sources: dict[str, dict[str, dict]], transfer_bp: float | None = None) -> list[dict]:
+    """
+    sources = {"bot": {"USD": {cash_buy,…}, …}, …} → 邊的清單。
+    transfer_bp 是外幣跨行匯款的成本（bp）；None 表示不放跨行匯款的邊。
+    """
     edges: list[dict] = []
+    accts: dict[str, list[str]] = {}   # 幣別 → 有外幣帳戶（有即期報價）的銀行
 
     def add(frm: str, to: str, rate: float, how: str, src: str) -> None:
         if rate and rate > 0:
@@ -380,6 +392,15 @@ def build_edges(sources: dict[str, dict[str, dict]]) -> list[dict]:
                 add(acct, cash, ss / cs, "提領現鈔", src)
             if sb and cb:
                 add(cash, acct, cb / sb, "存入現鈔", src)
+            if ss or sb:
+                accts.setdefault(ccy, []).append(src)
+    if transfer_bp is not None:
+        keep = 1 - transfer_bp / 1e4
+        for ccy, banks in accts.items():
+            for a in banks:
+                for b in banks:
+                    if a != b:
+                        add(f"{ccy}.acct@{a}", f"{ccy}.acct@{b}", keep, "跨行匯款", a)
     return edges
 
 
@@ -533,7 +554,9 @@ def check_alerts(cfg: dict, sources: dict, derived: dict) -> list[dict]:
         key = "→".join(f"{s['to']}@{s['source']}" for s in best["steps"])
         route = "台幣" + "".join(
             f" →（{SOURCE_NAMES.get(s['source'], s['source'])}{s['how']}）{node_label(s['to'])}" for s in best["steps"])
-        hits.append({"key": f"arb:{key}", "text": f"套利路徑 +{best['bp']:.1f}bp：{route}"})
+        wired = any(s["how"] == "跨行匯款" for s in best["steps"])
+        note = f"（已扣跨行匯款成本 {cfg.get('transfer_cost_bp'):g}bp）" if wired else ""
+        hits.append({"key": f"arb:{key}", "text": f"套利路徑 +{best['bp']:.1f}bp{note}：{route}"})
 
     thr = cfg.get("lag_alert_bp")
     if thr is not None:
@@ -549,7 +572,8 @@ def check_alerts(cfg: dict, sources: dict, derived: dict) -> list[dict]:
     return hits
 
 
-def derive(sources: dict, board_times: dict, market: dict, rows: list[list], today: str) -> dict:
+def derive(sources: dict, board_times: dict, market: dict, rows: list[list], today: str,
+           transfer_bp: float | None = None) -> dict:
     quotes = []
     for src, qs in sources.items():
         for ccy in FOREIGN:
@@ -560,7 +584,7 @@ def derive(sources: dict, board_times: dict, market: dict, rows: list[list], tod
             row.update(quote_metrics(q, market.get(ccy + "TWD"), board_times.get(src)))
             row["stats"] = history_stats(rows, src, ccy, today)
             quotes.append(row)
-    edges = build_edges(sources)
+    edges = build_edges(sources, transfer_bp)
     crosses = []
     for src, qs in sources.items():
         for c in cross_metrics(qs, market):
@@ -656,7 +680,7 @@ def run(dry_run: bool = False, force: bool = False) -> int:
     }
 
     new_rows = append_history([list(r) for r in rows], ts, raw, market)
-    derived = derive(adjusted, board_times, market, new_rows, ts)
+    derived = derive(adjusted, board_times, market, new_rows, ts, cfg.get("transfer_cost_bp"))
 
     # 提醒：同一天同一則只發一次。
     state = {k: d for k, d in (prev.get("alert_state") or {}).items() if d == ts[:10]}
@@ -671,6 +695,7 @@ def run(dry_run: bool = False, force: bool = False) -> int:
             for src, qs in raw.items()
         },
         "discount": disc,
+        "transfer_cost_bp": cfg.get("transfer_cost_bp"),
         "market": market,
         "missing": missing,
         "derived": derived,
