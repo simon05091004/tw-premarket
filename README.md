@@ -314,7 +314,7 @@ python tools/check_bus_page.py --shots /tmp/shots   # 順便截圖
 premarket/fx.py            抓牌告、算指標、寫 docs/data/fx/、判斷提醒
 docs/fx.html               頁面：牌告、套利掃描、換匯計算機、走勢、手動報價
 fx_config.json             讓分與提醒的設定
-.github/workflows/fx.yml   營業日 09:07–16:07 每 15 分鐘抓一次
+.github/workflows/fx.yml   抓牌告；由外部定時服務每 15 分鐘觸發（見下方），只在營業時段真的抓
 tools/check_fx_page.py     頁面的瀏覽器檢查
 ```
 
@@ -431,6 +431,73 @@ Actions 的執行記錄會出現黃色警告。
 https://<帳號>.github.io/<repo>/fx.html
 ```
 
+### 用外部服務定時觸發（必要）
+
+**不要指望 GitHub 自己的排程。** 這個 repo 的排程延遲非常嚴重：2026-11-17 外匯
+排程從 09:07 起一次都沒準時，第一次執行在 17:04 才出現；同一天的盤前分析晚了
+六個小時，前一天的盤後報告晚了九個半小時。套利機會以分鐘計，晚幾個小時就沒有
+意義。手動觸發（workflow_dispatch）則都在幾秒內開始，所以改由外部服務每 15 分鐘
+呼叫一次手動觸發的 API。`fx.yml` 裡的 GitHub 排程留著當備援。
+
+workflow 開頭有一道 `gate`：只有台北**週一到週五 09:00–16:59** 才真的抓，其他
+時間幾秒鐘就結束，不裝套件、不 commit。遲到的 GitHub 排程、或外部服務時段設錯，
+都會被它擋掉。手動觸發時勾選 `force` 可以跳過。
+
+設定一次就好，大約 10 分鐘：
+
+**1. 建一組只能觸發 Actions 的 GitHub 權杖**
+
+GitHub → 右上角頭像 → Settings → Developer settings → Personal access tokens →
+**Fine-grained tokens** → Generate new token：
+
+- Token name：`fx-cron`
+- Expiration：自己選（最長一年；到期前要回來換，見下方）
+- Repository access：**Only select repositories** → 選 `tw-premarket`
+- Permissions → Repository permissions → **Actions：Read and write**（其他都不要開；
+  Metadata 會自動變成 Read-only）
+
+產生後複製權杖（`github_pat_` 開頭），這個畫面關掉就看不到了。這組權杖只能觸發、
+取消、重跑這個 repo 的 workflow 和讀執行記錄，**不能改程式碼或讀 secrets**。
+
+**2. 在 cron-job.org 建一個定時工作**
+
+註冊 [cron-job.org](https://cron-job.org)（免費）→ Create cronjob：
+
+| 欄位 | 填什麼 |
+|---|---|
+| URL | `https://api.github.com/repos/<帳號>/<repo>/actions/workflows/fx.yml/dispatches` |
+| Execution schedule | 選 Custom：Minutes `7, 22, 37, 52`；Hours `9`–`16`；Days of week 週一到週五；其餘全選 |
+| Time zone | `Asia/Taipei` |
+
+Advanced 分頁：
+
+| 欄位 | 填什麼 |
+|---|---|
+| Request method | `POST` |
+| Headers | `Authorization: Bearer <第 1 步的權杖>`<br>`Accept: application/vnd.github+json`<br>`X-GitHub-Api-Version: 2022-11-28`<br>`Content-Type: application/json` |
+| Request body | `{"ref":"main"}` |
+
+再到 Notifications 打開「執行失敗時寄信」，權杖過期或被撤銷時才會知道。
+
+**3. 測一次**
+
+存檔後按 **Test run**：回應碼是 **204** 就對了（204 沒有內容是正常的）。到 GitHub
+的 Actions 分頁，一分鐘內應該會出現一筆「外匯牌告追蹤」，觸發方式是
+`workflow_dispatch`。不在營業時段測的話，那筆只會跑 `gate` 就結束，`fetch` 顯示
+skipped，這也代表設定是對的。
+
+常見的錯誤回應：
+
+| 回應碼 | 原因 |
+|---|---|
+| 401 | 權杖貼錯、過期或被撤銷 |
+| 403 | 權杖沒開 Actions 的 Read and write |
+| 404 | URL 的帳號／repo 名稱打錯，或權杖沒選到這個 repo |
+| 422 | Request body 不是 `{"ref":"main"}`，或 Content-Type 沒設 |
+
+**權杖到期前**：回到第 1 步產生新的一組（或在原權杖頁面按 Regenerate），把
+cron-job.org 的 `Authorization` header 換掉。
+
 ### 排程會多出很多 commit
 
 每 15 分鐘跑一次，**牌告沒變就不寫檔**（最多每 55 分鐘寫一次讓市場中價
@@ -462,7 +529,8 @@ Python 版，比對兩邊的最佳路徑；改了一邊忘了另一邊，這裡�
   對方回的是資料而不是驗證頁——臺銀、中信都卡在這一關。
 - **排程只在銀行營業時段跑（台北 09:07–16:07）。** 玉山晚上還在報價，但多數
   銀行的牌告那時是停住的，兩邊的價差不是能成交的機會。
-- **15 分鐘的頻率抓不到幾分鐘內就消失的價差。** GitHub 排程還會延遲。
+- **15 分鐘的頻率抓不到幾分鐘內就消失的價差。** 外部服務觸發後，GitHub 偶爾
+  也要排隊分配機器（實測多數幾秒內開始，最慢一次排了 44 分鐘）。
 - **市場中價在台北時段以外是境外報價**，和隔天銀行開盤的牌告可以差很多。
 
 ---

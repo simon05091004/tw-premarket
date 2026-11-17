@@ -1,10 +1,10 @@
 name: 外匯牌告追蹤
 
 on:
+  # 主要的觸發來源是外部定時服務（cron-job.org）呼叫 workflow_dispatch，見 README 第十一節。
+  # GitHub 自己的排程在這個 repo 延遲非常嚴重：2026-11-17 從 09:07 起的排程一次都沒準時，
+  # 第一次執行在 17:04 才出現。留著當備援；遲到落在營業時段以外的會被下面的 gate 擋掉。
   schedule:
-    # 銀行營業日的掛牌時段。台北 09:07–15:52 每 15 分鐘一次，
-    # 再加 16:07 收最後一筆。分鐘數避開 :00/:30（GitHub 排程最壅塞的時段）。
-    # 排程會延遲、偶爾整個被丟掉；這裡丟一輪沒關係，下一輪 15 分鐘後就來。
     - cron: "7,22,37,52 1-7 * * 1-5"
     - cron: "7 8 * * 1-5"
   workflow_dispatch:
@@ -22,7 +22,30 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # 只在台北週一到週五 09:00–16:59 抓。排程遲到好幾小時、或外部服務設錯時段時，
+  # 這裡幾秒鐘就結束，不裝套件、不抓資料、不 commit。手動觸發勾選 force 可以跳過。
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - id: check
+        env:
+          TZ: Asia/Taipei
+          FORCE: ${{ inputs.force }}
+        run: |
+          DOW=$(date +%u); HOUR=$((10#$(date +%H)))
+          if [ "$FORCE" = "true" ] || { [ "$DOW" -le 5 ] && [ "$HOUR" -ge 9 ] && [ "$HOUR" -le 16 ]; }; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "台北 $(date '+%a %H:%M') 不在營業時段（週一到週五 09:00–16:59），這次不抓。"
+          fi
+
   fetch:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
