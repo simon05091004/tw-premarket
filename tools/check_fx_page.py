@@ -59,9 +59,9 @@ def route(steps):
 
 async def same_as_python(pg, label):
     """頁面上（讓分、自訂報價都套用後）的報價 → Python 引擎，比對最佳迴圈。"""
-    sources = await pg.evaluate("S.sources")
+    sources, xfer = await pg.evaluate("[S.sources, S.xfer]")
     js = await pg.evaluate("S.cycles.map(c => ({bp: c.bp, steps: c.steps}))")
-    py = fx.best_cycles(fx.build_edges(sources))
+    py = fx.best_cycles(fx.build_edges(sources, xfer))
     check(f"{label}：JS 與 Python 的最佳迴圈路徑一致", route(js[0]["steps"]) == route(py[0]["steps"]),
           (route(js[0]["steps"]), route(py[0]["steps"])))
     check(f"{label}：前 5 名 bp 一致", all(abs(a["bp"] - b["bp"]) < 0.01 for a, b in zip(js[:5], py[:5])),
@@ -118,7 +118,11 @@ async def main(shots: str) -> None:
         await pg.select_option("#c-to", "USD.acct@bot")
         await pg.fill("#c-amt", "330000")
         got = float((await pg.inner_text("#calc .big")).split()[0].replace(",", ""))
-        check("台幣 → 美元帳戶 = 金額 ÷ 即期賣出", abs(got - 330000 / usd["spot_sell"]) < 0.01, got)
+        srcs, xfer = await pg.evaluate("[S.sources, S.xfer]")
+        want = fx.best_paths(fx.build_edges(srcs, xfer), "TWD", "USD.acct@bot")[0]
+        check("台幣 → 臺銀美元帳戶：和 Python 算的最佳路徑一致", abs(got - 330000 * want["factor"]) < 0.01,
+              (got, 330000 * want["factor"], [st["how"] for st in want["steps"]]))
+        check("最佳路徑不比直接在臺銀買差", got >= 330000 / usd["spot_sell"] - 0.01, got)
         check("有列出較差的替代路徑", await pg.locator("#calc .alt").count() >= 1)
         await pg.select_option("#c-to", "JPY.cash")
         await pg.select_option("#c-from", "USD.cash")
@@ -174,6 +178,21 @@ async def main(shots: str) -> None:
         await pg.click("#custom-box summary")
         await pg.click("#custom [data-del]")
         check("刪除後回到兩家", await pg.evaluate("Object.keys(S.sources).length") == 2)
+
+        print("\n[4b] 跨行匯款")
+        check("示範資料預設以 10bp 計跨行匯款", await pg.evaluate("S.xfer") == 10)
+        check("說明文字寫出匯款成本", "10 bp" in await pg.inner_text("#xfer-note"))
+        has_wire = await pg.evaluate("S.edges.some(e => e.how === '跨行匯款')")
+        check("圖上有外幣跨行匯款的邊", has_wire)
+        cross = await pg.evaluate("S.cross && S.cross.steps.map(s => s.how)")
+        check("列出最接近套利的跨行路徑", cross is not None and "跨行匯款" in cross, cross)
+        check("頁面顯示那條跨行路徑", "最接近套利" in await pg.inner_text("#arb"))
+        await pg.click("#xfer-box summary")
+        await pg.fill("#x-bp", "0")
+        check("改成 0 後重算", await pg.evaluate("S.xfer") == 0)
+        await same_as_python(pg, "匯款成本 0")
+        await pg.fill("#x-bp", "")
+        check("清空後回到預設", await pg.evaluate("S.xfer") == 10)
 
         print("\n[5] 實際資料檔")
         await pg.goto(BASE, wait_until="networkidle")

@@ -71,6 +71,7 @@
   /* 套利 */
   .verdict { background:var(--card); border-radius:.6rem; padding:.8rem .9rem; }
   .verdict .big { font-size:1.5rem; font-weight:600; }
+  .cross-best { margin-top:.6rem; padding-top:.6rem; border-top:1px dashed var(--rule); font-size:.85rem; }
   .cyc { list-style:none; margin:.6rem 0 0; padding:0; }
   .cyc li { display:grid; grid-template-columns:4.6rem 1fr; gap:.5rem; padding:.45rem 0; border-top:1px solid var(--rule); font-size:.85rem; align-items:baseline; }
   .cyc .bp { text-align:right; }
@@ -129,7 +130,7 @@
     <h2>套利掃描 <small>從台幣出發繞一圈回台幣</small></h2>
     <div id="arb"></div>
     <div id="cross"></div>
-    <p class="note">bp = 萬分之一。「實際成本」是真的賣掉前者、經台幣買進後者，比國際盤少換到多少。以上只計買賣價差與現鈔匯差；現鈔存提的最低手續費、跨行匯款費用另計，小額時它們才是主要成本。</p>
+    <p class="note">bp = 萬分之一。「實際成本」是真的賣掉前者、經台幣買進後者，比國際盤少換到多少。套利路徑計入買賣價差與現鈔匯差，<span id="xfer-note">每次外幣跨行匯款以 10 bp 計（可在設定調整）</span>；現鈔存提的最低手續費另計，小額時它才是主要成本。</p>
   </section>
 
   <section>
@@ -160,6 +161,11 @@
       <p class="note">線上換匯的優惠，每 1 外幣讓幾元台幣。只套用在即期：賣出價減、買入價加。留空就用灰字的預設值（玉山是銀行公布的網銀優惠）；你拿不到優惠就填 0。</p>
       <div class="form" id="disc" style="grid-template-columns:repeat(3,1fr);margin-top:.5rem"></div>
     </details>
+    <details id="xfer-box">
+      <summary>跨行匯款成本</summary>
+      <p class="note">把外幣從一家銀行匯到另一家的費用，換算成佔交易金額的萬分之幾（bp）。匯款費是固定金額，所以和你一次換多少有關：費用 1,000 元、一次換 100 萬台幣就是 10。留空用灰字的預設值。</p>
+      <div class="form" style="margin-top:.5rem"><div><label for="x-bp">成本（bp）</label><input id="x-bp" class="num" inputmode="decimal"></div></div>
+    </details>
     <details id="custom-box">
       <summary>其他銀行報價（手動輸入）</summary>
       <p class="note">填入另一家的牌告，套利掃描與計算機會一起算。沒掛牌的欄位留空。手動輸入的報價不會自動更新，用完記得刪。</p>
@@ -182,6 +188,7 @@ const CCY_NAME = { TWD:"台幣", USD:"美元", JPY:"日圓", EUR:"歐元" };
 const BANKS = { bot:"臺灣銀行", esun:"玉山銀行", taishin:"台新銀行" };
 const FRESH_MIN = 30;
 const LAG_MIN_BP = 3;   // 和 fx.py 的 LAG_MIN_BP 一致：市場中價本身有幾 bp 的雜訊
+const XFER_DEFAULT = 10; // 和 fx.py 的 transfer_cost_bp 預設一致，資料檔沒帶這個欄位時用
 const DEMO = new URLSearchParams(location.search).has("demo");
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
@@ -201,8 +208,8 @@ function applyDiscount(q, d) {
   if (o.spot_buy) o.spot_buy = Math.round((o.spot_buy + d) * 1e6) / 1e6;
   return o;
 }
-function buildEdges(sources) {
-  const edges = [];
+function buildEdges(sources, transferBp) {
+  const edges = [], accts = {};   // accts：幣別 → 有外幣帳戶（有即期報價）的銀行
   const add = (from, to, rate, how, source) => { if (rate > 0 && isFinite(rate)) edges.push({ from, to, rate, how, source }); };
   for (const [src, quotes] of Object.entries(sources)) {
     for (const [ccy, q] of Object.entries(quotes)) {
@@ -214,7 +221,14 @@ function buildEdges(sources) {
       if (cb) add(cash, "TWD", cb, "現鈔買入", src);
       if (ss && cs) add(acct, cash, ss / cs, "提領現鈔", src);
       if (sb && cb) add(cash, acct, cb / sb, "存入現鈔", src);
+      if (ss || sb) (accts[ccy] = accts[ccy] || []).push(src);
     }
+  }
+  // 兩家的外幣帳戶之間靠跨行匯款相通；transferBp 是 null 就不放這條邊
+  if (transferBp != null) {
+    const keep = 1 - transferBp / 1e4;
+    for (const [ccy, banks] of Object.entries(accts))
+      for (const a of banks) for (const b of banks) if (a !== b) add(ccy + ".acct@" + a, ccy + ".acct@" + b, keep, "跨行匯款", a);
   }
   return edges;
 }
@@ -279,6 +293,12 @@ function discountFor(src, ccy) {
   if (mine != null && isFinite(+mine)) return +mine;       // 這台裝置上填的優先（填 0 = 不套用）
   return +((((S.latest || {}).discount || {})[src] || {})[ccy]) || 0;
 }
+function transferBp() {
+  const mine = store.get("xfer", null);
+  if (mine != null && isFinite(+mine) && +mine >= 0) return +mine;   // 這台裝置上填的優先
+  const d = (S.latest || {}).transfer_cost_bp;
+  return d === undefined ? XFER_DEFAULT : d;                         // null = 設定檔關掉了跨行匯款
+}
 function rebuild() {
   const L = S.latest || {};
   S.sources = {}; S.names = {}; S.raw = {}; S.board = {};
@@ -296,9 +316,13 @@ function rebuild() {
     }
     if (Object.keys(quotes).length) { S.sources[c.id] = quotes; S.raw[c.id] = quotes; S.names[c.id] = c.name || "自訂"; }
   }
-  S.edges = buildEdges(S.sources);
-  S.cycles = bestCycles(S.edges);
-  window.__fx = { cycles:S.cycles, edges:S.edges };
+  S.xfer = transferBp();
+  S.edges = buildEdges(S.sources, S.xfer);
+  const all = bestCycles(S.edges, Infinity);
+  S.cycles = all.slice(0, 8);
+  // 單一銀行繞一圈必賠，那是換匯成本；「離套利還差多少」要看跨了兩家的那幾條
+  S.cross = all.find((c) => new Set(c.steps.map((s) => s.source)).size > 1) || null;
+  window.__fx = { cycles:S.cycles, edges:S.edges, cross:S.cross };
 }
 
 // ───────── 繪製 ─────────
@@ -369,11 +393,18 @@ function renderArb() {
   const old = [...new Set(best.steps.map((s) => s.source))].filter((k) => (((S.latest || {}).sources || {})[k] || {}).stale).map((k) => S.names[k]);
   const head = best.bp > 0
     ? '<div class="big num pos">' + bp(best.bp) + ' bp</div><div>帳面上有套利空間。下單前先確認兩邊報價都還是現在這個數字，並把固定費用算進去。' +
+      (best.steps.some((s) => s.how === "跨行匯款") ? "已扣跨行匯款成本 " + S.xfer + " bp。" : "") +
       (old.length ? "<b>注意：" + esc(old.join("、")) + "用的是舊牌告，這個數字不可靠。</b>" : "") + "</div>"
     : '<div class="big num">' + bp(best.bp) + ' bp</div><div class="muted">目前沒有套利空間。繞一圈最少賠這麼多，這也是你來回換匯的最低成本。</div>';
   let h = '<div class="verdict">' + head + '<ul class="cyc">';
   for (const c of S.cycles.slice(0, 5)) h += '<li><span class="bp num ' + (c.bp > 0 ? "pos" : "") + '">' + bp(c.bp) + "</span>" + stepsHtml("TWD", c.steps) + "</li>";
-  $("arb").innerHTML = h + "</ul></div>";
+  h += "</ul>";
+  if (S.cross && S.cross.bp <= 0) {
+    h += '<div class="cross-best"><div class="muted">跨兩家銀行最接近套利的一條（轉正才是機會）</div><ul class="cyc" style="margin-top:.2rem"><li style="border-top:none"><span class="bp num">' +
+      bp(S.cross.bp) + "</span>" + stepsHtml("TWD", S.cross.steps) + "</li></ul></div>";
+  }
+  $("xfer-note").textContent = S.xfer == null ? "不考慮外幣跨行匯款" : "每次外幣跨行匯款以 " + S.xfer + " bp 計（可在設定調整）";
+  $("arb").innerHTML = h + "</div>";
 
   const market = (S.latest || {}).market || {};
   let rows = "";
@@ -495,6 +526,13 @@ function renderChart() {
 // ───────── 設定 ─────────
 function renderSettings() {
   const L = S.latest || {};
+  const xdef = L.transfer_cost_bp === undefined ? XFER_DEFAULT : L.transfer_cost_bp, xmine = store.get("xfer", null);
+  $("x-bp").placeholder = xdef == null ? "不計" : xdef;
+  $("x-bp").value = xmine == null ? "" : xmine;
+  $("x-bp").oninput = (e) => {
+    const v = parseFloat(e.target.value);
+    store.set("xfer", e.target.value.trim() !== "" && v >= 0 ? v : null); refresh(false);
+  };
   const mine = store.get("disc", {}), def = L.discount || {};
   $("disc").innerHTML = Object.entries(L.sources || {}).map(([src, v]) =>
     '<div class="wide" style="font-size:.8rem;margin-top:.3rem">' + esc(v.name) + "</div>" +
@@ -573,7 +611,7 @@ function demoData() {
   market.EURUSD = { price:market.EURTWD.price / market.USDTWD.price, time:t };
   market.EURJPY = { price:market.EURTWD.price / market.JPYTWD.price, time:t };
   return { latest:{ fetched_at:t, sources:{ bot:{ name:"臺灣銀行", board_time:t, quotes:last }, esun:{ name:"玉山銀行", board_time:t, quotes:last2 } },
-    market, missing:[], discount:{ esun:{ USD:0.031, JPY:0.0012, EUR:0.12 } } }, rows };
+    market, missing:[], discount:{ esun:{ USD:0.031, JPY:0.0012, EUR:0.12 } }, transfer_cost_bp:10 }, rows };
 }
 async function load() {
   if (DEMO) { const d = demoData(); S.latest = d.latest; S.rows = d.rows; refresh(true); return; }

@@ -266,6 +266,31 @@ class EngineTest(unittest.TestCase):
         jpy = [c for c in cycles if c["steps"][0]["to"].startswith("JPY.acct")][0]
         self.assertEqual(jpy["steps"][0]["source"], "taishin")
 
+    def test_no_wire_edges_unless_asked(self):
+        other = {"USD": {"cash_buy": None, "cash_sell": None, "spot_buy": 32.9, "spot_sell": 33.0}}
+        edges = fx.build_edges({"bot": BOT, "x": other})
+        self.assertFalse([e for e in edges if e["how"] == "跨行匯款"])
+
+    def test_wire_connects_the_same_currency_across_banks(self):
+        other = {"USD": {"cash_buy": None, "cash_sell": None, "spot_buy": 32.9, "spot_sell": 33.0}}
+        wires = [e for e in fx.build_edges({"bot": BOT, "x": other}, 10) if e["how"] == "跨行匯款"]
+        self.assertEqual({(e["from"], e["to"]) for e in wires},
+                         {("USD.acct@bot", "USD.acct@x"), ("USD.acct@x", "USD.acct@bot")})  # 日圓、歐元只有一家
+        self.assertTrue(all(abs(e["rate"] - 0.999) < 1e-12 for e in wires))
+
+    def test_spot_to_spot_arbitrage_needs_the_wire(self):
+        # x 行即期賣 32.80，臺銀即期買 32.915：毛利 35bp，只有匯款過去才拿得到
+        other = {"USD": {"cash_buy": None, "cash_sell": None, "spot_buy": 32.70, "spot_sell": 32.80}}
+        sources = {"bot": BOT, "x": other}
+        self.assertTrue(all(c["bp"] < 0 for c in fx.best_cycles(fx.build_edges(sources))))
+        best = fx.best_cycles(fx.build_edges(sources, 10))[0]
+        self.assertEqual(route(best), ["USD.acct@x", "USD.acct@bot", "TWD"])
+        self.assertEqual([s["how"] for s in best["steps"]], ["即期賣出", "跨行匯款", "即期買入"])
+        self.assertAlmostEqual(best["factor"], 32.915 / 32.80 * 0.999)
+        self.assertAlmostEqual(best["bp"], (32.915 / 32.80 * 0.999 - 1) * 1e4, places=1)
+        # 匯款成本吃掉全部毛利時就不是套利
+        self.assertLess(fx.best_cycles(fx.build_edges(sources, 40))[0]["bp"], 0)
+
     def test_node_labels(self):
         self.assertEqual(fx.node_label("TWD"), "台幣")
         self.assertEqual(fx.node_label("JPY.cash"), "日圓現鈔")
@@ -380,6 +405,23 @@ class AlertTest(unittest.TestCase):
         self.assertIn("（玉山銀行現鈔賣出）美元現鈔", hits[0]["text"])
         self.assertIn("（臺灣銀行現鈔買入）台幣", hits[0]["text"])
         self.assertEqual(fx.check_alerts({"arb_alert_bp": 25}, sources, d), [])
+
+    def test_arb_alert_mentions_the_wire_cost(self):
+        other = {"USD": {"cash_buy": None, "cash_sell": None, "spot_buy": 32.70, "spot_sell": 32.80}}
+        sources = {"bot": BOT, "x": other}
+        d = fx.derive(sources, {"bot": T0, "x": T0}, {}, [], T0, transfer_bp=10)
+        hits = fx.check_alerts({"arb_alert_bp": 0, "transfer_cost_bp": 10}, sources, d)
+        self.assertEqual(len(hits), 1)
+        self.assertIn("已扣跨行匯款成本 10bp", hits[0]["text"])
+        self.assertIn("（x跨行匯款）美元帳戶·臺灣銀行", hits[0]["text"])
+        # 沒有跨行匯款的邊就看不到這個機會
+        d0 = fx.derive(sources, {"bot": T0, "x": T0}, {}, [], T0)
+        self.assertEqual(fx.check_alerts({"arb_alert_bp": 0}, sources, d0), [])
+
+    def test_shipped_config_turns_the_arb_alert_on(self):
+        cfg = fx.load_config()
+        self.assertEqual(cfg["arb_alert_bp"], 0)
+        self.assertEqual(cfg["transfer_cost_bp"], 10)
 
     def test_no_arb_alert_when_every_cycle_loses(self):
         hits = fx.check_alerts({"arb_alert_bp": -1000}, {"bot": BOT}, self.derived({}))
