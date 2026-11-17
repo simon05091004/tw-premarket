@@ -418,6 +418,38 @@ class AlertTest(unittest.TestCase):
         d0 = fx.derive(sources, {"bot": T0, "x": T0}, {}, [], T0)
         self.assertEqual(fx.check_alerts({"arb_alert_bp": 0}, sources, d0), [])
 
+    def test_alert_text_goes_to_github_output_as_one_multiline_value(self):
+        import os, tempfile
+        from datetime import datetime
+        with tempfile.NamedTemporaryFile("r+", encoding="utf-8", suffix=".txt") as fh:
+            old = os.environ.get("GITHUB_OUTPUT")
+            os.environ["GITHUB_OUTPUT"] = fh.name
+            try:
+                text = fx.emit_alert(datetime(2026, 11, 18, 10, 22, tzinfo=fx.TPE), ["第一則", "第二則"])
+            finally:
+                if old is None:
+                    del os.environ["GITHUB_OUTPUT"]
+                else:
+                    os.environ["GITHUB_OUTPUT"] = old
+            written = open(fh.name, encoding="utf-8").read()
+        self.assertEqual(text, "外匯提醒 11/18 10:22\n・第一則\n・第二則")
+        self.assertEqual(written, "alert_text<<__FX__\n" + text + "\n__FX__\n")
+
+    def test_test_alert_is_clearly_marked_and_touches_no_files(self):
+        import contextlib, io, os
+        before = {p: p.stat().st_mtime for p in fx.DATA_DIR.glob("*.json")}
+        old = os.environ.pop("GITHUB_OUTPUT", None)
+        try:
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                self.assertEqual(fx.send_test_alert(), 0)
+        finally:
+            if old is not None:
+                os.environ["GITHUB_OUTPUT"] = old
+        self.assertTrue(buf.getvalue().startswith("【測試】外匯提醒 "))
+        self.assertIn("不是套利機會", buf.getvalue())
+        self.assertEqual(before, {p: p.stat().st_mtime for p in fx.DATA_DIR.glob("*.json")})
+
     def test_shipped_config_turns_the_arb_alert_on(self):
         cfg = fx.load_config()
         self.assertEqual(cfg["arb_alert_bp"], 0)

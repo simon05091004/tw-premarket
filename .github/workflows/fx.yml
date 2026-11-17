@@ -10,7 +10,11 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: "牌告沒變也寫檔"
+        description: "牌告沒變也寫檔（也會跳過營業時段檢查）"
+        type: boolean
+        default: false
+      test_alert:
+        description: "只發一則 LINE 測試通知（不抓牌告、不 commit）"
         type: boolean
         default: false
 
@@ -34,9 +38,10 @@ jobs:
         env:
           TZ: Asia/Taipei
           FORCE: ${{ inputs.force }}
+          TEST: ${{ inputs.test_alert }}
         run: |
           DOW=$(date +%u); HOUR=$((10#$(date +%H)))
-          if [ "$FORCE" = "true" ] || { [ "$DOW" -le 5 ] && [ "$HOUR" -ge 9 ] && [ "$HOUR" -le 16 ]; }; then
+          if [ "$FORCE" = "true" ] || [ "$TEST" = "true" ] || { [ "$DOW" -le 5 ] && [ "$HOUR" -ge 9 ] && [ "$HOUR" -le 16 ]; }; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
@@ -67,6 +72,7 @@ jobs:
         id: fx
         run: |
           ARGS=()
+          if [ "${{ inputs.test_alert }}" = "true" ]; then ARGS+=(--test-alert); fi
           if [ "${{ inputs.force }}" = "true" ]; then ARGS+=(--force); fi
           python -m premarket.fx "${ARGS[@]}"
 

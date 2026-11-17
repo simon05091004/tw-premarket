@@ -431,6 +431,9 @@ Actions 的執行記錄會出現黃色警告。
 https://<帳號>.github.io/<repo>/fx.html
 ```
 
+想確認通知收得到（例如換了 LINE 權杖之後），到 Actions 手動觸發「外匯牌告追蹤」並勾選
+`test_alert`：只會發一則標著「【測試】」的訊息，不抓牌告、不 commit，任何時段都能用。
+
 ### 用外部服務定時觸發（必要）
 
 **不要指望 GitHub 自己的排程。** 這個 repo 的排程延遲非常嚴重：2026-11-17 外匯
@@ -511,7 +514,7 @@ cron-job.org 的 `Authorization` header 換掉。
 ### 自動檢查
 
 ```bash
-python -m unittest tests.test_fx      # 50 項：解析、路徑搜尋、偏離、歷史、提醒
+python -m unittest tests.test_fx      # 52 項：解析、路徑搜尋、偏離、歷史、提醒
 python tools/check_fx_page.py         # 58 項：在真的 Chromium 裡跑頁面
 ```
 
