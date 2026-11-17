@@ -431,6 +431,16 @@ Actions 的執行記錄會出現黃色警告。
 https://<帳號>.github.io/<repo>/fx.html
 ```
 
+**LINE 額度**：免費的輕用量方案每月 200 則，按「則數 × 好友數」計算，盤前、盤後、
+外匯三種通知共用。發送由 `tools/line_notify.py` 統一處理：
+
+- 剩不到兩成時，每則通知最後會多一行「⚠️ LINE 本月免費額度剩 N／200 則」。
+- 真的用完時（LINE 回 429 monthly limit），那一步會**失敗**，整個 run 變紅，GitHub 寄
+  錯誤信給你；資料與報告照常更新。權杖失效（401/403）也一樣。要收到這封信，
+  GitHub 的 Settings → Notifications → **Actions** 要勾選 Email（預設是開的，只通知
+  失敗的 workflow）。
+- 伺服器暫時錯誤、連線問題、每秒請求過多，只亮黃色警告，不會變紅。
+
 想確認通知收得到（例如換了 LINE 權杖之後），到 Actions 手動觸發「外匯牌告追蹤」並勾選
 `test_alert`：只會發一則標著「【測試】」的訊息，不抓牌告、不 commit，任何時段都能用。
 
