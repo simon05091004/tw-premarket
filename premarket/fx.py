@@ -745,10 +745,37 @@ def run(dry_run: bool = False, force: bool = False) -> int:
     (DATA_DIR / "history.json").write_text('{"rows":[\n' + body + "\n]}\n", encoding="utf-8")
     log.info("已寫入 %s（歷史 %d 列）", DATA_DIR, len(new_rows))
 
-    if fresh and os.environ.get("GITHUB_OUTPUT"):
-        text = "外匯提醒 " + now.strftime("%m/%d %H:%M") + "\n" + "\n".join("・" + h["text"] for h in fresh)
-        with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+    if fresh:
+        emit_alert(now, [h["text"] for h in fresh])
+    return 0
+
+
+def emit_alert(now: datetime, lines: list[str], title: str = "外匯提醒") -> str:
+    """
+    組出 LINE 通知的文字，交給 workflow 的「LINE 提醒」步驟（寫進 GITHUB_OUTPUT 的
+    alert_text）。不在 Actions 裡跑時只印出來。回傳組好的文字。
+    """
+    text = f"{title} {now.strftime('%m/%d %H:%M')}\n" + "\n".join("・" + t for t in lines)
+    out = os.environ.get("GITHUB_OUTPUT")
+    if out:
+        with open(out, "a", encoding="utf-8") as fh:
             fh.write("alert_text<<__FX__\n" + text + "\n__FX__\n")
+    else:
+        print(text)
+    return text
+
+
+def send_test_alert() -> int:
+    """
+    只送一則測試通知，走的是和真正提醒完全一樣的路徑（GITHUB_OUTPUT → LINE 步驟）。
+    不抓牌告、不寫檔，所以 workflow 後面的 commit 步驟會因為沒有變動而直接結束。
+    換了 LINE 權杖、或想確認通知還收得到時用。
+    """
+    now = datetime.now(TPE).replace(microsecond=0)
+    emit_alert(now, [
+        "這是測試訊息，不是套利機會。",
+        "之後玉山、台新之間扣掉跨行匯款成本後出現正報酬，就會用這個格式通知你。",
+    ], title="【測試】外匯提醒")
     return 0
 
 
@@ -756,8 +783,11 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="外匯牌告追蹤")
     ap.add_argument("--dry-run", action="store_true", help="只抓、只印，不寫檔")
     ap.add_argument("--force", action="store_true", help="牌告沒變也寫檔")
+    ap.add_argument("--test-alert", action="store_true", help="只送一則 LINE 測試通知，不抓牌告、不寫檔")
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    if args.test_alert:
+        return send_test_alert()
     return run(dry_run=args.dry_run, force=args.force)
 
 
