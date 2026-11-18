@@ -109,11 +109,13 @@ jobs:
       # 和 LINE 完全獨立：一邊的權杖過期不會擋住另一邊。
       # 條件看 push 的結果而不是 success()：要的是「報告真的上去了」。
       # 手動觸發時即使 gen 因「報告已存在」而略過，也重送最新一份（不花 API 費用）。
+      # 外部定時服務（cron-job.org）也是走 workflow_dispatch，但帶 scheduled=true，
+      # 要當成排程看待：報告已存在就不送，否則遲到的備援與外部觸發會各推一次。
       - name: Telegram 推播
         if: >-
           always() && steps.push.outcome == 'success' &&
           env.TELEGRAM_BOT_TOKEN != '' &&
-          (steps.gen.outputs.skipped != 'true' || github.event_name == 'workflow_dispatch')
+          (steps.gen.outputs.skipped != 'true' || (github.event_name == 'workflow_dispatch' && !inputs.scheduled))
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
