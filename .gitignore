@@ -24,3 +24,6 @@ __pycache__/
 # 被擋掉時報告照樣產出，但 load_prev_payload() 會一直讀到舊的那份，
 # 沒有任何錯誤訊息。
 /data/
+
+# 外匯 Telegram 出錯通知的狀態（Actions 用快取在每輪之間傳，不進 repo）
+.fx_notify_state.json

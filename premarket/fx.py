@@ -717,6 +717,11 @@ def run(dry_run: bool = False, force: bool = False) -> int:
         if os.environ.get("GITHUB_ACTIONS") and banks:
             # 這一輪照樣成功結束（其他來源還是會更新），但要在 Actions 頁面上看得到。
             print(f"::warning::{'、'.join(banks)}的牌告沒抓到，頁面會沿用上一次的牌告。連續出現請看 README 第十一節。")
+    # 交給 Telegram 出錯通知（premarket/notify_fx.py）數「連續幾輪沒抓到」。
+    # 沒抓到也要寫 {}：沒有這個 output 代表「這輪根本沒去抓」（例如測試通知），
+    # 和「全部都抓到了」是兩回事 —— 混在一起的話，測試通知會把連續沒抓到的次數歸零。
+    _set_output("missing_sources", json.dumps(
+        {m: SOURCE_NAMES[m] for m in missing if m in SOURCE_NAMES}, ensure_ascii=False))
 
     if dry_run:
         print(json.dumps(latest, ensure_ascii=False, indent=2))
@@ -748,6 +753,14 @@ def run(dry_run: bool = False, force: bool = False) -> int:
     if fresh:
         emit_alert(now, [h["text"] for h in fresh])
     return 0
+
+
+def _set_output(name: str, value: str) -> None:
+    """寫一行 step output。不在 Actions 裡跑時什麼都不做。值不能有換行（多行的用 emit_alert 那種寫法）。"""
+    out = os.environ.get("GITHUB_OUTPUT")
+    if out:
+        with open(out, "a", encoding="utf-8") as fh:
+            fh.write(f"{name}={value}\n")
 
 
 def emit_alert(now: datetime, lines: list[str], title: str = "外匯提醒") -> str:

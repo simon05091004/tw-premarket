@@ -14,7 +14,7 @@ on:
         type: boolean
         default: false
       test_alert:
-        description: "只發一則 LINE 測試通知（不抓牌告、不 commit）"
+        description: "只發測試通知：LINE 提醒＋Telegram 出錯通知（不抓牌告、不 commit）"
         type: boolean
         default: false
 
@@ -58,6 +58,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Telegram 出錯通知的狀態：這段故障通知過了沒、哪家銀行連續幾輪沒抓到。
+      # 每 15 分鐘一輪，沒有這個的話壞掉一整天會收到快 30 則。
+      # 用快取在每輪之間傳，不 commit 進 repo —— 推回 repo 失敗正是要通知的狀況之一。
+      # key 每輪都不同、永遠對不中，靠 restore-keys 取回最新的一份。
+      - name: 取回通知狀態
+        uses: actions/cache/restore@v4
+        with:
+          path: .fx_notify_state.json
+          key: fx-notify-state-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: fx-notify-state-
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -66,7 +77,8 @@ jobs:
       - run: pip install -r requirements.txt
 
       - name: 跑測試
-        run: python -m unittest tests.test_fx tests.test_line_notify
+        id: tests
+        run: python -m unittest tests.test_fx tests.test_line_notify tests.test_notify_fx
 
       - name: 抓牌告
         id: fx
@@ -77,6 +89,7 @@ jobs:
           python -m premarket.fx "${ARGS[@]}"
 
       - name: 推回 repo
+        id: push
         run: |
           git config user.name  "premarket-bot"
           git config user.email "premarket-bot@users.noreply.github.com"
@@ -94,6 +107,7 @@ jobs:
       # 只有 fx_config.json 裡設了提醒、而且這一輪真的觸發，alert_text 才有內容。
       # 同一則提醒一天只發一次（見 fx.py 的 alert_state）。
       - name: LINE 提醒
+        id: line
         if: success() && env.LINE_TOKEN != '' && steps.fx.outputs.alert_text != ''
         env:
           LINE_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
@@ -105,3 +119,37 @@ jobs:
           # 發送、額度檢查、錯誤處理都在 tools/line_notify.py（三個 workflow 共用）。
           # 權杖失效或本月額度用完時它會讓這個 step 失敗，GitHub 就會寄錯誤信通知你。
           LINE_MESSAGE="$MSG" python -m tools.line_notify
+
+      # Telegram 出錯通知。只在狀態改變時推：剛壞掉推一次、恢復時推一次，中間連續
+      # 失敗不重複推（判斷全在 premarket/notify_fx.py）。會推的狀況：
+      #   - 整輪失敗，頁面沒有更新（測試、環境、全部來源都沒抓到、推回 repo、timeout）
+      #   - 某一家銀行連續兩輪沒抓到（run 是綠的、只有黃色警告，最容易沒人發現）
+      #   - 外匯提醒沒送到 LINE：連同原本要送的內容一起轉過來
+      # always()：前面任何一步失敗或超時都要跑。用 python3 而非 python：環境裝不起來
+      # 那輪也要送得出去，notify_fx 只用標準庫。
+      - name: Telegram 出錯通知
+        id: notify
+        if: always() && env.TELEGRAM_BOT_TOKEN != ''
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          PAGES_URL: ${{ vars.PAGES_URL }}
+          JOB_STATUS: ${{ job.status }}
+          TESTS: ${{ steps.tests.outcome }}
+          FX: ${{ steps.fx.outcome }}
+          PUSH: ${{ steps.push.outcome }}
+          LINE: ${{ steps.line.outcome }}
+          MISSING: ${{ steps.fx.outputs.missing_sources }}
+          ALERT_TEXT: ${{ steps.fx.outputs.alert_text }}
+          TEST_ALERT: ${{ inputs.test_alert }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python3 -m premarket.notify_fx
+
+      # 狀態有變才存（通知送出去了、或連續沒抓到的次數變了）。平常一切正常時不存，
+      # 免得每 15 分鐘多一份快取。
+      - name: 存回通知狀態
+        if: always() && steps.notify.outputs.state_changed == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .fx_notify_state.json
+          key: fx-notify-state-${{ github.run_id }}-${{ github.run_attempt }}
