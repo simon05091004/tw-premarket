@@ -69,6 +69,11 @@ def run_main(brief_result, tmpdir: Path) -> int:
         return main_mod.main()
 
 
+def _output(path: Path) -> str:
+    """GITHUB_OUTPUT 的內容；沒寫過就是空字串（set_output 只在有需要時才建檔）。"""
+    return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
 class TestBriefGuards(unittest.TestCase):
     """報告不完整時，必須 exit 非零且不留下任何報告檔案。"""
 
@@ -313,6 +318,46 @@ class TestHolidaySkip(unittest.TestCase):
         code, fetched = self._run("postmarket", traded=True)
         self.assertEqual(code, 0)
         self.assertTrue(fetched, "有開盤就要照常抓資料")
+
+    def test_holiday_signals_skipped(self) -> None:
+        """
+        休市也要寫 skipped=true —— 否則通知會把前一份報告再推一次。
+
+        假日那天 gen 以 exit 0 結束、docs/ 沒有任何變動，於是「推回 repo」那步
+        也成功，Telegram 推播的條件（skipped != 'true'）照樣成立。它拿不到
+        report_date，就退而去找「最新一份」，把前一個交易日的報告重送。
+        而假日當天一樣會被觸發三次（外部定時服務＋兩個備援排程）= 三則重複推播。
+        LINE 那邊更早就有同一個洞，而且它廣播的日期是執行當天，對不上內容。
+        """
+        out = self.tmpdir / "gh_output"
+        with patch.dict("os.environ", {"GITHUB_OUTPUT": str(out)}):
+            code, fetched = self._run("postmarket", traded=False)
+        self.assertEqual(code, 0)
+        self.assertFalse(fetched)
+        self.assertIn("skipped=true", _output(out), "休市沒寫 skipped，通知會重送舊報告")
+
+    def test_weekend_signals_skipped(self) -> None:
+        """
+        週末同理。排程本身不會在週末觸發，但手動補跑、以及外部定時服務的
+        星期設定寫錯時會走到這裡 —— 那時同樣不該把舊報告再推一次。
+        """
+        out = self.tmpdir / "gh_output"
+        with (
+            patch.dict("os.environ", {"GITHUB_OUTPUT": str(out)}),
+            patch.object(main_mod, "is_trading_day", return_value=False),
+        ):
+            code, fetched = self._run("postmarket", traded=True)
+        self.assertEqual(code, 0)
+        self.assertFalse(fetched, "週末不必白跑抓取")
+        self.assertIn("skipped=true", _output(out), "週末沒寫 skipped，通知會重送舊報告")
+
+    def test_trading_day_does_not_signal_skipped(self) -> None:
+        """有開盤就不能寫 skipped，不然當天那則通知會被自己擋掉。"""
+        out = self.tmpdir / "gh_output"
+        with patch.dict("os.environ", {"GITHUB_OUTPUT": str(out)}):
+            code, _ = self._run("postmarket", traded=True)
+        self.assertEqual(code, 0)
+        self.assertNotIn("skipped", _output(out))
 
     def test_unknown_proceeds(self) -> None:
         """

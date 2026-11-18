@@ -188,8 +188,14 @@ def signal_skipped() -> None:
     """
     告訴 workflow「這次沒產出新報告」。
 
-    LINE 通知那步的條件是 success(),光是提早 return 0 擋不住它 ——
-    備援那次會再廣播一則一模一樣的通知給所有訂閱者。
+    通知那兩步只看「報告有沒有 push 上去」,光是提早 return 0 擋不住它們:
+    LINE 會再廣播一則一模一樣的通知給所有訂閱者；Telegram 那步拿不到
+    report_date，會退而去找「最新一份」，把前一個交易日的報告重送。
+
+    三條早退路徑（週末、國定假日、報告已存在）都要經過這裡。原本只有最後一條
+    有呼叫 —— 國定假日那天照樣會被觸發三次（外部定時服務＋兩個備援排程），
+    於是同一份舊報告被推三次。LINE 那邊更糟：它廣播的日期是執行當天，
+    連結指向沒有更新的頁面。
     """
     set_output("skipped", "true")
 
@@ -256,6 +262,7 @@ def main() -> int:
 
     if not is_trading_day(today):
         log.info("%s 非交易日（週末），結束。", today)
+        signal_skipped()
         return 0
 
     # 國定假日：盤後才查得出來（盤前的目標日期還沒開盤，查不到是正常的）。
@@ -263,6 +270,7 @@ def main() -> int:
     # 只有「確定休市」才跳過；問不出來（None）一律照常往下跑。
     if args.session == "postmarket" and market_traded_on(today) is False:
         log.info("%s 沒有開盤（國定假日），結束。", today)
+        signal_skipped()
         return 0
 
     # 備援排程用的守衛。GitHub 偶爾會把 schedule 事件整個丟掉 —— 2026-08-27 盤前

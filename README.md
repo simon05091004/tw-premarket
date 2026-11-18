@@ -58,8 +58,10 @@ open docs/index.html
    - 另外加一個 **variable**（Variables 分頁，不是 secret）`PAGES_URL`，
      值是你的 Pages 網址 —— 「看完整報告」按鈕才會連到當天那一份；
      沒設的話按鈕退回連到 repo 裡的 `.md`，仍然看得到內容
-   - 想驗證：手動 Run workflow（**不要勾 force**）。報告已存在時不會重新產生，
-     但會把最新一份重送一次，不花 API 費用
+   - 想驗證：手動 Run workflow，**force 和 scheduled 兩個都不要勾**。報告已存在時
+     不會重新產生，但會把最新一份重送一次，不花 API 費用。
+     勾了 `scheduled` 會被當成排程 —— 報告已存在就安靜結束，什麼都不會送
+     （那個勾選框是給 cron-job.org 用的，見第三節）
 
    兩個 secret 沒設就自動略過，workflow 不會因此變紅（fork 的人不受影響）。
    LINE 與 Telegram 各自獨立，一邊的權杖過期不會擋住另一邊。
