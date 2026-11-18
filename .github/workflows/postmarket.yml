@@ -1,11 +1,14 @@
 name: 台股盤後籌碼分析
 
 on:
+  # 主要的觸發來源是外部定時服務（cron-job.org）在台北 21:23 呼叫 workflow_dispatch，
+  # 帶 scheduled=true，見 README 第三節。GitHub 自己的排程在這個 repo 遲到得更嚴重：
+  # 11/16、11/17 的盤後分別到隔天 06:55、05:48 才啟動（晚 8.5–9.5 小時）。
+  # 下面的排程留著當備援：遲到到隔天清晨的那次，main.py 會把 21:00 前的執行算成
+  # 前一個交易日（POSTMARKET_ROLLOVER_HOUR），撞到 report_exists 守衛就結束。
   schedule:
     # 台北 21:23 = UTC 13:23（同一天）
     # 融資餘額約 21:00 公布，排 21:23 可完整涵蓋
-    # 刻意避開整點與半點：GitHub 排程在 :00/:30 最壅塞，
-    # 實測延遲 63~143 分鐘，錯開分鐘數通常能縮短排隊時間
     # 若想改跑 16:00（融資會缺）：改成 "0 8 * * 1-5"
     - cron: "23 13 * * 1-5"
     # 備援：GitHub 高負載時會延遲 schedule，也可能整個丟掉不送 —— 2026-08-27
@@ -20,6 +23,12 @@ on:
         required: false
       force:
         description: "報告已存在也重新產生（會再花一次 API 費用）"
+        type: boolean
+        default: false
+      # 外部定時服務專用，手動觸發不要勾。勾了代表「這是一次排程」：
+      # 報告已存在時跟排程一樣安靜結束，不會被當成手動補送而重發通知。
+      scheduled:
+        description: "由外部定時服務觸發（視同排程，手動觸發不要勾）"
         type: boolean
         default: false
 

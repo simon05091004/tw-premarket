@@ -54,14 +54,47 @@ open docs/index.html
 
 ## 三、排程時間
 
-```yaml
-- cron: "45 22 * * 0-4"   # UTC 22:45 = 台北隔天 06:45
-```
+| 報告 | 時間（台北） | 觸發方式 |
+|---|---|---|
+| 盤前分析 | 週一到週五 06:38 | cron-job.org 呼叫 `premarket.yml` 的 workflow_dispatch |
+| 盤後籌碼 | 週一到週五 21:23 | cron-job.org 呼叫 `postmarket.yml` 的 workflow_dispatch |
 
-**GitHub Actions 的排程會延遲 5–15 分鐘**（尖峰時段更久），所以刻意提前 15 分鐘。
-如果常常晚於 07:00，把 `45 22` 往前調到 `30 22`。
+**GitHub 自己的排程靠不住。** 這個 repo 的排程天天遲到：2026-11-12 到 11-18 的
+盤前每一天都晚 4–6 小時（11/18 排 06:38，11:49 才啟動），盤後晚到隔天清晨
+（晚 8.5–9.5 小時）。workflow 裡兩個備援排程排在同一條隊伍，一樣遲到，只能補
+「事件整個被丟掉」的情況。手動觸發（workflow_dispatch）則幾秒內開始，所以和外匯
+追蹤一樣，改由外部服務準時呼叫。
 
-`0-4` 是 UTC 的週日到週四，對應台北的週一到週五。
+workflow 裡的 GitHub 排程留著當備援：外部服務那次成功的話，遲到的排程會撞到
+`report_exists` 守衛，在抓資料與呼叫 API 之前就結束，**不花錢、不重發通知**。
+
+### 設定 cron-job.org（兩個工作）
+
+**權杖**：沿用第十一節建給外匯的那組（Actions：Read and write、只選
+`tw-premarket`）就好，三個 workflow 在同一個 repo。還沒建的話照第十一節第 1 步做。
+
+最快的做法是在 cron-job.org 把外匯那個工作按 **Clone**，只改下面這些欄位：
+
+| 欄位 | 盤前 | 盤後 |
+|---|---|---|
+| Title | `盤前分析` | `盤後籌碼` |
+| URL | `https://api.github.com/repos/<帳號>/<repo>/actions/workflows/premarket.yml/dispatches` | 同左，`premarket.yml` 換成 `postmarket.yml` |
+| Execution schedule（Custom） | Minutes `38`；Hours `6`；週一到週五 | Minutes `23`；Hours `21`；週一到週五 |
+| Time zone | `Asia/Taipei` | `Asia/Taipei` |
+| Request body（Advanced） | `{"ref":"main","inputs":{"scheduled":"true"}}` | 同左 |
+
+Headers、Request method（`POST`）和外匯的一樣，不用改。Notifications 記得打開
+「執行失敗時寄信」。
+
+`scheduled` 一定要帶：Telegram 推播會把手動觸發當成「補送」，報告已存在也重送
+最新一份。帶了 `scheduled` 才會跟排程一樣，報告已存在就安靜結束。
+
+**測試**：按 **Test run**，回應碼 **204** 就對了。到 Actions 分頁，一分鐘內會出現
+一筆 `workflow_dispatch`。當天報告已經出過的話，它會在「報告已存在」那裡結束，
+不花 API 費用，也不會重發 LINE —— 這正好拿來驗證設定。回應碼的意思見第十一節
+（422 多半是 body 打錯，例如 `scheduled` 拼錯或 workflow 還沒有這個 input）。
+
+國定假日盤後由 `main.py` 查證交所判斷休市後直接結束；盤前則不另外處理，見下一段。
 
 國定假日不另外處理 —— `main.py` 會先找「最近一個有加權指數資料的日期」，
 找不到就中止，多跑一次不會產生錯誤報告。
