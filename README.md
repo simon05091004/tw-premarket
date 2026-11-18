@@ -64,7 +64,9 @@ open docs/index.html
      （那個勾選框是給 cron-job.org 用的，見第三節）
 
    兩個 secret 沒設就自動略過，workflow 不會因此變紅（fork 的人不受影響）。
-   LINE 與 Telegram 各自獨立，一邊的權杖過期不會擋住另一邊。
+   LINE 與 Telegram 各自獨立，一邊的權杖過期不會擋住另一邊。LINE 掛掉時
+   （權杖失效或本月額度用完）Telegram 會補推一則，標題是「通知有問題」而不是
+   「沒有發布」—— 報告是好的，要去處理的是 LINE。
 
 網址會是 `https://<帳號>.github.io/<repo>/`。加到手機主畫面就是一個 App。
 

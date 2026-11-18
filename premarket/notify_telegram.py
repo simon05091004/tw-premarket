@@ -220,14 +220,25 @@ def build_report_message(sess: Session, iso: str, md: str) -> tuple[str, list[st
     return "\n\n".join(parts)[:HARD_LIMIT], missing
 
 
-def build_failure_message(sess: Session, reason: str, iso: str = "") -> str:
-    head = f"⚠️ <b>{esc(sess.title)} 沒有發布</b>"
-    if iso:
-        head = f"⚠️ <b>{esc(sess.title)} {esc(when_label(iso))} 沒有發布</b>"
-    # 細節一律由 --reason 帶進來：產出失敗、測試沒過、push 失敗、被中止，
-    # 四種情況的下一步不一樣，寫死一句「報告沒有產出」會有時候是錯的。
+def build_failure_message(
+    sess: Session, reason: str, iso: str = "", published: bool = False
+) -> str:
+    """published=True 代表「報告是好的，壞的是通知」（例如 LINE 額度用完）。
+
+    標題一定要分開。看到「沒有發布」第一個動作是去翻報告在不在，
+    但這種情況該翻的是 LINE 後台 —— 標題講錯，等於每次都先白找一輪。
+    """
+    when = f" {esc(when_label(iso))}" if iso else ""
+    if published:
+        head = f"⚠️ <b>{esc(sess.title)}{when}的通知有問題</b>"
+        tail = "報告本身已發布，網頁是新的。按下面的按鈕看執行紀錄。"
+    else:
+        head = f"⚠️ <b>{esc(sess.title)}{when}沒有發布</b>"
+        tail = "按下面的按鈕看執行紀錄。"
+    # 細節一律由 --reason 帶進來：產出失敗、測試沒過、push 失敗、被中止、
+    # LINE 掛掉，每種的下一步都不一樣，寫死一句話總有時候是錯的。
     body = reason.strip() or "執行失敗，原因不明。"
-    return f"{head}\n\n{esc(body)}\n\n按下面的按鈕看執行紀錄。"
+    return f"{head}\n\n{esc(body)}\n\n{tail}"
 
 
 def report_url(sess: Session, iso: str) -> str:
@@ -344,6 +355,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--date", default="", help="報告日期 YYYY-MM-DD（留空=最新一份）")
     ap.add_argument("--failure", action="store_true", help="改送失敗警告")
     ap.add_argument("--reason", default="", help="失敗原因（配合 --failure）")
+    ap.add_argument(
+        "--published",
+        action="store_true",
+        help="報告有發布，失敗的只是通知（配合 --failure，例如 LINE 額度用完）",
+    )
     ap.add_argument("--run-url", default="", help="執行紀錄連結（配合 --failure）")
     ap.add_argument("--dry-run", action="store_true", help="只印訊息，不送出")
     args = ap.parse_args(argv)
@@ -357,7 +373,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.failure:
-        text = build_failure_message(sess, args.reason, args.date.strip())
+        text = build_failure_message(
+            sess, args.reason, args.date.strip(), published=args.published
+        )
         button = ("看執行紀錄", args.run_url.strip())
     else:
         iso = args.date.strip()

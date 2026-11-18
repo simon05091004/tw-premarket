@@ -141,6 +141,7 @@ jobs:
       # 用 broadcast 而非 push：不需要知道自己的 userId，發給所有加好友的人即可。
       # skipped 是備援排程那次：報告早就發過了，再廣播一次等於騷擾訂閱者。
       - name: LINE 通知
+        id: line
         # 不再用 success()：Telegram 那步失敗（權杖過期會 exit 1）不該連帶
         # 讓 LINE 也不送。兩邊各自獨立，只看報告有沒有真的 push 上去。
         if: >-
@@ -159,3 +160,22 @@ jobs:
           # 發送、額度檢查、錯誤處理都在 tools/line_notify.py（三個 workflow 共用）。
           # 權杖失效或本月額度用完時它會讓這個 step 失敗，GitHub 就會寄錯誤信通知你。
           LINE_MESSAGE="$MSG" python -m tools.line_notify
+
+      # LINE 掛掉時也要推 Telegram。tools/line_notify.py 在權杖失效或本月額度用完時
+      # 會讓上一步失敗，好讓 GitHub 寄錯誤信 —— 但「紅字加一封沒人看的信」正是
+      # 2026-10 金鑰過期連續失敗九個交易日沒被發現的那個組合。
+      #
+      # 跟前面那個「Telegram 失敗警告」是相反的情況，所以分成兩步：那步在報告
+      # 沒發布時跑（它排在 LINE 之前，所以不會為了 LINE 失敗而誤報），這步相反 ——
+      # 報告好端端發布了，只有 LINE 沒送出。--published 會把標題換成「通知有問題」，
+      # 否則看到警告的第一個動作會是去翻今天的報告在不在，而該翻的是 LINE 後台。
+      - name: Telegram 通知 LINE 失敗
+        if: always() && steps.line.outcome == 'failure' && env.TELEGRAM_BOT_TOKEN != ''
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python3 -m premarket.notify_telegram --session postmarket --failure --published \
+            --reason "LINE 通知沒送出：權杖失效，或本月的免費額度用完了。" \
+            --date "${{ steps.gen.outputs.report_date }}" \
+            --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

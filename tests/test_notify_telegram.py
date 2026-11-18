@@ -192,6 +192,23 @@ class TestMessageBuilding(unittest.TestCase):
         text = tg.build_failure_message(tg.SESSIONS["premarket"], "")
         self.assertIn("原因不明", text)
 
+    def test_published_failure_does_not_claim_the_report_is_missing(self):
+        """LINE 額度用完時報告是好的。標題講成「沒有發布」會害人先白找一輪報告。"""
+        text = tg.build_failure_message(
+            tg.SESSIONS["premarket"], "LINE 通知沒送出", "2026-11-18", published=True
+        )
+        self.assertNotIn("沒有發布", text)
+        self.assertIn("通知有問題", text)
+        self.assertIn("報告本身已發布", text)
+        self.assertIn("LINE 通知沒送出", text)
+
+    def test_unpublished_failure_still_says_not_published(self):
+        text = tg.build_failure_message(
+            tg.SESSIONS["premarket"], "分析產出失敗", "2026-11-18"
+        )
+        self.assertIn("沒有發布", text)
+        self.assertNotIn("報告本身已發布", text)
+
 
 class TestReportUrl(unittest.TestCase):
     def test_pages_url_trailing_slash(self):
@@ -375,6 +392,21 @@ class TestCli(unittest.TestCase):
         self.assertEqual(rc, 0)       # 摘要缺一段不算失敗，報告本身是好的
         self.assertIn("::warning::", buf.getvalue())
         self.assertIn("抓不到", buf.getvalue())
+
+    def test_published_flag_reaches_the_message(self):
+        """LINE 掛掉那步走的是 --failure --published，報告其實是好的。"""
+        rc, _, post = self._run(
+            ["--session", "postmarket", "--failure", "--published",
+             "--reason", "LINE 通知沒送出：權杖失效，或本月的免費額度用完了。",
+             "--date", "2026-11-18",
+             "--run-url", "https://github.com/a/b/actions/runs/9"],
+            ENV,
+        )
+        self.assertEqual(rc, 0)
+        text = post.call_args.args[1]["text"]
+        self.assertIn("通知有問題", text)
+        self.assertNotIn("沒有發布", text)
+        self.assertIn("額度", text)
 
     def test_dry_run_sends_nothing(self):
         rc, out, post = self._run(["--date", "2026-11-04", "--dry-run"], {})
