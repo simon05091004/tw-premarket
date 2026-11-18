@@ -66,7 +66,7 @@ jobs:
       - run: pip install -r requirements.txt
 
       - name: 跑測試
-        run: python -m unittest tests.test_fx
+        run: python -m unittest tests.test_fx tests.test_line_notify
 
       - name: 抓牌告
         id: fx
@@ -102,14 +102,6 @@ jobs:
         run: |
           MSG="${ALERT_TEXT}
           ${PAGES_URL:-https://github.com/${{ github.repository }}}/fx.html"
-          CODE=$(curl -sS -X POST https://api.line.me/v2/bot/message/broadcast \
-            -H "Authorization: Bearer $LINE_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n --arg t "$MSG" '{messages:[{type:"text",text:$t}]}')" \
-            -o /dev/null -w "%{http_code}") || CODE="000"
-          echo "LINE 回應碼 $CODE"
-          case "$CODE" in
-            2*) ;;
-            401|403) echo "::error::LINE 權杖無效或已過期。牌告資料已更新，只有提醒沒送出。"; exit 1 ;;
-            *) echo "::warning::LINE 廣播失敗（HTTP $CODE），可能是暫時性問題。" ;;
-          esac
+          # 發送、額度檢查、錯誤處理都在 tools/line_notify.py（三個 workflow 共用）。
+          # 權杖失效或本月額度用完時它會讓這個 step 失敗，GitHub 就會寄錯誤信通知你。
+          LINE_MESSAGE="$MSG" python -m tools.line_notify
