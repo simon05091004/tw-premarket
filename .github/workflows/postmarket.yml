@@ -1,11 +1,14 @@
 name: 台股盤後籌碼分析
 
 on:
+  # 主要的觸發來源是外部定時服務（cron-job.org）在台北 21:23 呼叫 workflow_dispatch，
+  # 帶 scheduled=true，見 README 第三節。GitHub 自己的排程在這個 repo 遲到得更嚴重：
+  # 11/16、11/17 的盤後分別到隔天 06:55、05:48 才啟動（晚 8.5–9.5 小時）。
+  # 下面的排程留著當備援：遲到到隔天清晨的那次，main.py 會把 21:00 前的執行算成
+  # 前一個交易日（POSTMARKET_ROLLOVER_HOUR），撞到 report_exists 守衛就結束。
   schedule:
     # 台北 21:23 = UTC 13:23（同一天）
     # 融資餘額約 21:00 公布，排 21:23 可完整涵蓋
-    # 刻意避開整點與半點：GitHub 排程在 :00/:30 最壅塞，
-    # 實測延遲 63~143 分鐘，錯開分鐘數通常能縮短排隊時間
     # 若想改跑 16:00（融資會缺）：改成 "0 8 * * 1-5"
     - cron: "23 13 * * 1-5"
     # 備援：GitHub 高負載時會延遲 schedule，也可能整個丟掉不送 —— 2026-08-27
@@ -20,6 +23,12 @@ on:
         required: false
       force:
         description: "報告已存在也重新產生（會再花一次 API 費用）"
+        type: boolean
+        default: false
+      # 外部定時服務專用，手動觸發不要勾。勾了代表「這是一次排程」：
+      # 報告已存在時跟排程一樣安靜結束，不會被當成手動補送而重發通知。
+      scheduled:
+        description: "由外部定時服務觸發（視同排程，手動觸發不要勾）"
         type: boolean
         default: false
 
@@ -147,23 +156,6 @@ jobs:
           if [ -n "$D" ]; then WHEN="${D:5:2}/${D:8:2}"; else WHEN="$(date +%m/%d)"; fi
           MSG="台股盤後籌碼 ${WHEN} 已更新
           ${PAGES_URL:-https://github.com/${{ github.repository }}}/latest-postmarket.html"
-          # 一定要看回應碼：curl 沒加 --fail 的話，LINE 回 401 它照樣 exit 0，
-          # step 會標成綠的，通知默默停掉沒有人會發現。
-          # 連線失敗時 curl 自己會非零結束，用 || 接住才不會被 bash -e 直接砍掉。
-          CODE=$(curl -sS -X POST https://api.line.me/v2/bot/message/broadcast \
-            -H "Authorization: Bearer $LINE_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n --arg t "$MSG" '{messages:[{type:"text",text:$t}]}')" \
-            -o /dev/null -w "%{http_code}") || CODE="000"
-          echo "LINE 回應碼 $CODE"
-          case "$CODE" in
-            2*) ;;
-            401|403)
-              # 報告已經 commit 並 push 完了，這裡失敗不會少一份報告，只是通知沒送出。
-              echo "::error::LINE 權杖無效或已過期，請更新 LINE_CHANNEL_ACCESS_TOKEN secret。報告本身已發布，只有通知沒送出。"
-              exit 1 ;;
-            *)
-              # 5xx／連線問題屬暫時性，標成 warning 就好 —— 不值得為了它把整個 run 變紅。
-              echo "::warning::LINE 廣播失敗（HTTP $CODE），可能是暫時性問題。報告本身已發布。"
-              ;;
-          esac
+          # 發送、額度檢查、錯誤處理都在 tools/line_notify.py（三個 workflow 共用）。
+          # 權杖失效或本月額度用完時它會讓這個 step 失敗，GitHub 就會寄錯誤信通知你。
+          LINE_MESSAGE="$MSG" python -m tools.line_notify

@@ -1,0 +1,8 @@
+{
+  "sources": ["esun", "taishin"],
+  "discount": {},
+  "transfer_cost_bp": 10,
+  "alerts": [],
+  "arb_alert_bp": 0,
+  "lag_alert_bp": null
+}

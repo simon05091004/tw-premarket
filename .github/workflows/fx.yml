@@ -1,0 +1,107 @@
+name: 外匯牌告追蹤
+
+on:
+  # 主要的觸發來源是外部定時服務（cron-job.org）呼叫 workflow_dispatch，見 README 第十一節。
+  # GitHub 自己的排程在這個 repo 延遲非常嚴重：2026-11-17 從 09:07 起的排程一次都沒準時，
+  # 第一次執行在 17:04 才出現。留著當備援；遲到落在營業時段以外的會被下面的 gate 擋掉。
+  schedule:
+    - cron: "7,22,37,52 1-7 * * 1-5"
+    - cron: "7 8 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "牌告沒變也寫檔（也會跳過營業時段檢查）"
+        type: boolean
+        default: false
+      test_alert:
+        description: "只發一則 LINE 測試通知（不抓牌告、不 commit）"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fx
+  cancel-in-progress: false
+
+jobs:
+  # 只在台北週一到週五 09:00–16:59 抓。排程遲到好幾小時、或外部服務設錯時段時，
+  # 這裡幾秒鐘就結束，不裝套件、不抓資料、不 commit。手動觸發勾選 force 可以跳過。
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - id: check
+        env:
+          TZ: Asia/Taipei
+          FORCE: ${{ inputs.force }}
+          TEST: ${{ inputs.test_alert }}
+        run: |
+          DOW=$(date +%u); HOUR=$((10#$(date +%H)))
+          if [ "$FORCE" = "true" ] || [ "$TEST" = "true" ] || { [ "$DOW" -le 5 ] && [ "$HOUR" -ge 9 ] && [ "$HOUR" -le 16 ]; }; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "台北 $(date '+%a %H:%M') 不在營業時段（週一到週五 09:00–16:59），這次不抓。"
+          fi
+
+  fetch:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      TZ: Asia/Taipei
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: 跑測試
+        run: python -m unittest tests.test_fx tests.test_line_notify
+
+      - name: 抓牌告
+        id: fx
+        run: |
+          ARGS=()
+          if [ "${{ inputs.test_alert }}" = "true" ]; then ARGS+=(--test-alert); fi
+          if [ "${{ inputs.force }}" = "true" ]; then ARGS+=(--force); fi
+          python -m premarket.fx "${ARGS[@]}"
+
+      - name: 推回 repo
+        run: |
+          git config user.name  "premarket-bot"
+          git config user.email "premarket-bot@users.noreply.github.com"
+          git add docs/data/fx
+          # 牌告沒變時 fx.py 根本不寫檔，這裡就沒東西可 commit，直接結束。
+          if git diff --staged --quiet; then echo "沒有變動"; exit 0; fi
+          git commit -m "外匯牌告 $(date '+%Y-%m-%d %H:%M')"
+          # 盤前／盤後的排程也會推同一個分支；撞到就重拉再推，最多三次。
+          for i in 1 2 3; do
+            git pull --rebase && git push && exit 0
+            sleep $((i * 5))
+          done
+          exit 1
+
+      # 只有 fx_config.json 裡設了提醒、而且這一輪真的觸發，alert_text 才有內容。
+      # 同一則提醒一天只發一次（見 fx.py 的 alert_state）。
+      - name: LINE 提醒
+        if: success() && env.LINE_TOKEN != '' && steps.fx.outputs.alert_text != ''
+        env:
+          LINE_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          PAGES_URL: ${{ vars.PAGES_URL }}
+          ALERT_TEXT: ${{ steps.fx.outputs.alert_text }}
+        run: |
+          MSG="${ALERT_TEXT}
+          ${PAGES_URL:-https://github.com/${{ github.repository }}}/fx.html"
+          # 發送、額度檢查、錯誤處理都在 tools/line_notify.py（三個 workflow 共用）。
+          # 權杖失效或本月額度用完時它會讓這個 step 失敗，GitHub 就會寄錯誤信通知你。
+          LINE_MESSAGE="$MSG" python -m tools.line_notify
