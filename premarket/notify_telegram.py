@@ -71,6 +71,9 @@ SESSIONS = {
 
 _HEADING = re.compile(r"^##\s+(.*\S)\s*$")
 _NUM_PREFIX = re.compile(r"^\d+\s*[.、)]\s*")
+# 條列項目：「- 」「* 」或「1. 」「2、」「3) 」。編號後面的「.」「)」要接空白才算 ——
+# 不然「3.5% 的跌幅…」這種以數字開頭的句子會被當成第 3 項。
+_LIST_ITEM = re.compile(r"^(?:[-*]\s+|(\d+)(?:[.)]\s+|、\s*))(.*)$")
 _SENTENCE_ENDS = "。！？!?"
 
 
@@ -153,27 +156,37 @@ def trim(text: str, limit: int) -> str:
 
 
 def summarize(lines: list[str], limit: int) -> str:
-    """把一節內文壓成一段訊息。條列保持條列,不要黏成一團。"""
+    """把一節內文壓成一段訊息。條列保持條列,不要黏成一團。
+
+    編號清單也算條列：盤後「明日觀察重點」多半寫成「1. … 2. …」，只認「- 」的話
+    五點會黏成一大段，超出額度的那幾點還會被句尾截斷吃掉，連「另 N 項」都不會出現。"""
     if not lines:
         return ""
-    bullets = [ln for ln in lines if ln.startswith(("- ", "* "))]
-    if bullets:
-        return _pick_bullets(bullets, limit)
+    items: list[tuple[str, str]] = []
+    for ln in lines:
+        m = _LIST_ITEM.match(ln)
+        if m and m.group(2).strip():
+            marker = f"{m.group(1)}." if m.group(1) else "•"
+            items.append((marker, m.group(2).strip()))
+    if items:
+        return _pick_bullets(items, limit)
     return trim(" ".join(lines), limit)
 
 
-def _pick_bullets(bullets: list[str], limit: int) -> str:
-    """整條保留或整條不要 —— 砍半的條列看起來像資料掉了。"""
+def _pick_bullets(items: list[tuple[str, str]], limit: int) -> str:
+    """整條保留或整條不要 —— 砍半的條列看起來像資料掉了。
+
+    編號照原文保留：「…另 1 項」之後去看完整報告，才對得上是第幾點沒送。"""
     kept: list[str] = []
     used = 0
-    for b in bullets:
-        text = trim(b[2:].strip(), limit)
+    for marker, body in items:
+        text = trim(body, limit)
         if kept and used + len(text) > limit:
             break
-        kept.append(text)
+        kept.append(f"{marker} {text}")
         used += len(text)
-    out = "\n".join("• " + t for t in kept)
-    dropped = len(bullets) - len(kept)
+    out = "\n".join(kept)
+    dropped = len(items) - len(kept)
     if dropped:
         out += f"\n…另 {dropped} 項見完整報告"
     return out

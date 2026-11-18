@@ -127,6 +127,26 @@ class TestBullets(unittest.TestCase):
         out = tg.summarize(["第一行。", "第二行。"], 100)
         self.assertEqual(out, "第一行。 第二行。")
 
+    def test_numbered_list_stays_a_list(self):
+        # 盤後「明日觀察重點」多半是編號清單。以前會黏成「1. … 2. …」一整段。
+        out = tg.summarize(["1. 第一項。", "2. 第二項。"], 100)
+        self.assertEqual(out, "1. 第一項。\n2. 第二項。")
+
+    def test_numbered_overflow_is_counted_not_silently_dropped(self):
+        lines = [f"{i}. 第{i}項" + "長" * 40 + "。" for i in range(1, 6)]
+        out = tg.summarize(lines, 100)
+        self.assertIn("…另 3 項見完整報告", out)
+        self.assertTrue(out.startswith("1. "))
+        self.assertIn("\n2. ", out)
+
+    def test_chinese_enumeration_comma(self):
+        out = tg.summarize(["1、第一項", "2、第二項"], 100)
+        self.assertEqual(out, "1. 第一項\n2. 第二項")
+
+    def test_sentence_starting_with_a_decimal_is_not_a_list_item(self):
+        out = tg.summarize(["3.5% 的跌幅集中在台積電。", "其餘族群持平。"], 100)
+        self.assertEqual(out, "3.5% 的跌幅集中在台積電。 其餘族群持平。")
+
 
 class TestRealReports(unittest.TestCase):
     """拿 docs/ 下最近幾份真實報告驗抓段落 —— 格式規範寫在 prompts/，不是我編的。"""
