@@ -53,8 +53,11 @@ open docs/index.html
    - BotFather 輸入 `/newbot` 建一個 bot（名稱例如「台股每日報告」），複製它給的 token
    - 先打開那個 bot 按「開始」，再用瀏覽器開
      `https://api.telegram.org/bot<你的token>/getUpdates`，
-     找 `"chat":{"id":` 後面那串數字
-   - 加兩個 secret：`TELEGRAM_BOT_TOKEN`、`TELEGRAM_CHAT_ID`
+     找 `"chat":{"id":` 後面那串數字（或問 @userinfobot，它回的 `Id` 就是）。
+     **不是 token 冒號前面那串** —— 那是 bot 自己的 ID，填了會得到
+     `400 chat not found`
+   - 加兩個 **secret**（Secrets 分頁，不是 Variables）：`TELEGRAM_BOT_TOKEN`、`TELEGRAM_CHAT_ID`。
+     同一組 secret 也會開啟外匯的出錯通知（見第十一節）
    - 另外加一個 **variable**（Variables 分頁，不是 secret）`PAGES_URL`，
      值是你的 Pages 網址 —— 「看完整報告」按鈕才會連到當天那一份；
      沒設的話按鈕退回連到 repo 裡的 `.md`，仍然看得到內容
@@ -126,6 +129,7 @@ premarket/
   render.py     產生 HTML（手機優先，紅漲綠跌）
   main.py       主流程：判斷交易日 → 抓 → 分析 → 輸出
   notify_telegram.py  把報告的「一句話總結」與推估段落推到手機（只用標準庫）
+  notify_fx.py        外匯 workflow 的 Telegram 出錯通知，只在剛壞掉／恢復時推（只用標準庫）
 prompts/
   premarket_system.md   ★ 這個檔案比程式碼重要，見下節
 docs/
@@ -431,7 +435,7 @@ CSV 是手寫的範例。想要臺銀的話有兩條路：
 （HTTP 202，2026-11-17 實測），同樣不繞過。要和中信比價請用手動輸入。
 
 某一家這一輪沒抓到時：頁面沿用它上一次的牌告並標示時間，其他來源照常更新，
-Actions 的執行記錄會出現黃色警告。
+Actions 的執行記錄會出現黃色警告。連續兩輪沒抓到會推 Telegram（見下方「出錯通知」）。
 
 **玉山的網銀優惠預設會套用。** 玉山的 API 每個幣別都帶一個 `Bonus`（例如美元
 0.031），也就是它網頁上「優惠匯率」那一欄：買入加、賣出減。路徑計算與牌告卡
@@ -495,7 +499,24 @@ https://<帳號>.github.io/<repo>/fx.html
 - 伺服器暫時錯誤、連線問題、每秒請求過多，只亮黃色警告，不會變紅。
 
 想確認通知收得到（例如換了 LINE 權杖之後），到 Actions 手動觸發「外匯牌告追蹤」並勾選
-`test_alert`：只會發一則標著「【測試】」的訊息，不抓牌告、不 commit，任何時段都能用。
+`test_alert`：LINE 與 Telegram 各發一則標著「【測試】」的訊息，不抓牌告、不 commit，
+任何時段都能用。
+
+### 出錯通知（Telegram）
+
+設了 `TELEGRAM_BOT_TOKEN`／`TELEGRAM_CHAT_ID`（見第二節）就會開啟，和台股報告推到同一個
+對話。外匯 15 分鐘跑一次，每輪出錯都推的話壞掉一天會收到快 30 則，所以**只在狀態改變時推**：
+剛壞掉推一次，恢復時推一次，中間連續失敗不重複推。
+
+| 狀況 | 什麼時候推 |
+|---|---|
+| 整輪失敗、頁面沒有更新（測試沒過、環境裝不起來、全部來源都沒抓到、推回 repo 失敗、超過 timeout） | 壞掉的第一輪；恢復後第一輪推「恢復更新」 |
+| 某一家銀行沒抓到（run 是綠的、只有黃色警告） | **連續兩輪**才推（台新偶爾被重設連線，下一輪通常就好）；抓回來時推「恢復了」 |
+| 外匯提醒沒送到 LINE（權杖失效或額度用完） | 每次都推，並附上原本要送的提醒內容 |
+
+判斷邏輯在 `premarket/notify_fx.py`。「這段故障通知過了沒」記在 `.fx_notify_state.json`，
+由 workflow 用 Actions 快取在每輪之間傳遞，不進 repo —— 推回 repo 失敗正是要通知的狀況
+之一。快取被清掉時從頭算，最壞是同一段故障多推一次，不會漏推。
 
 ### 用外部服務定時觸發（必要）
 
