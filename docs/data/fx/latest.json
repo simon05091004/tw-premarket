@@ -1,51 +1,51 @@
 {
- "fetched_at": "2026-11-19T09:52:33+08:00",
+ "fetched_at": "2026-11-19T10:07:42+08:00",
  "sources": {
   "esun": {
    "name": "玉山銀行",
-   "board_time": "2026-11-19T09:52:20+08:00",
+   "board_time": "2026-11-19T10:07:20+08:00",
    "quotes": {
     "EUR": {
-     "cash_buy": 35.74,
-     "cash_sell": 36.74,
-     "spot_buy": 36.04,
-     "spot_sell": 36.44
+     "cash_buy": 35.71,
+     "cash_sell": 36.71,
+     "spot_buy": 36.01,
+     "spot_sell": 36.41
     },
     "JPY": {
-     "cash_buy": 0.2043,
-     "cash_sell": 0.2113,
-     "spot_buy": 0.2053,
-     "spot_sell": 0.2093
+     "cash_buy": 0.2042,
+     "cash_sell": 0.2112,
+     "spot_buy": 0.2052,
+     "spot_sell": 0.2092
     },
     "USD": {
-     "cash_buy": 32.72,
-     "cash_sell": 33.27,
-     "spot_buy": 32.97,
-     "spot_sell": 33.07
+     "cash_buy": 32.71,
+     "cash_sell": 33.26,
+     "spot_buy": 32.96,
+     "spot_sell": 33.06
     }
    }
   },
   "taishin": {
    "name": "台新銀行",
-   "board_time": "2026-11-19T09:52:18+08:00",
+   "board_time": "2026-11-19T10:07:18+08:00",
    "quotes": {
     "USD": {
-     "cash_buy": 32.773,
-     "cash_sell": 33.25,
-     "spot_buy": 32.975,
-     "spot_sell": 33.075
+     "cash_buy": 32.758,
+     "cash_sell": 33.235,
+     "spot_buy": 32.96,
+     "spot_sell": 33.06
     },
     "JPY": {
-     "cash_buy": 0.2032,
-     "cash_sell": 0.2112,
-     "spot_buy": 0.2052,
-     "spot_sell": 0.2087
+     "cash_buy": 0.203,
+     "cash_sell": 0.211,
+     "spot_buy": 0.205,
+     "spot_sell": 0.2085
     },
     "EUR": {
-     "cash_buy": 35.72,
-     "cash_sell": 36.736,
-     "spot_buy": 36.053,
-     "spot_sell": 36.403
+     "cash_buy": 35.694,
+     "cash_sell": 36.71,
+     "spot_buy": 36.027,
+     "spot_sell": 36.377
     }
    }
   }
@@ -60,28 +60,28 @@
  "transfer_cost_bp": 10,
  "market": {
   "USDTWD": {
-   "price": 32.985001,
-   "time": "2026-11-19T09:52:00+08:00"
+   "price": 32.971001,
+   "time": "2026-11-19T10:07:00+08:00"
   },
   "USDJPY": {
-   "price": 159.371994,
-   "time": "2026-11-19T09:52:00+08:00"
+   "price": 159.399994,
+   "time": "2026-11-19T10:07:00+08:00"
   },
   "EURUSD": {
-   "price": 1.097454,
-   "time": "2026-11-19T09:51:00+08:00"
+   "price": 1.097093,
+   "time": "2026-11-19T10:07:00+08:00"
   },
   "EURJPY": {
-   "price": 174.869003,
-   "time": "2026-11-19T09:52:00+08:00"
+   "price": 174.820999,
+   "time": "2026-11-19T10:07:00+08:00"
   },
   "JPYTWD": {
-   "price": 0.206969,
-   "time": "2026-11-19T09:52:00+08:00"
+   "price": 0.206844,
+   "time": "2026-11-19T10:07:00+08:00"
   },
   "EURTWD": {
-   "price": 36.199521,
-   "time": "2026-11-19T09:51:00+08:00"
+   "price": 36.172254,
+   "time": "2026-11-19T10:07:00+08:00"
   }
  },
  "missing": [],
@@ -90,38 +90,38 @@
    {
     "source": "esun",
     "ccy": "USD",
-    "cash_buy": 32.72,
-    "cash_sell": 33.27,
-    "spot_buy": 33.001,
-    "spot_sell": 33.039,
+    "cash_buy": 32.71,
+    "cash_sell": 33.26,
+    "spot_buy": 32.991,
+    "spot_sell": 33.029,
     "spot_spread_pct": 0.115,
     "cash_spread_pct": 1.667,
-    "market_mid": 32.985001,
-    "dev_bp": 10.6,
+    "market_mid": 32.971001,
+    "dev_bp": 11.8,
     "lag": {
      "side": "sell",
-     "bp": 4.9
+     "bp": 6.1
     },
     "stats": {
      "days": 4,
      "pct_rank": 100,
      "low": 32.95,
-     "high": 33.07,
+     "high": 33.06,
      "prev_close": 33.06,
-     "chg_pct": 0.03
+     "chg_pct": 0.0
     }
    },
    {
     "source": "esun",
     "ccy": "JPY",
-    "cash_buy": 0.2043,
-    "cash_sell": 0.2113,
-    "spot_buy": 0.2065,
-    "spot_sell": 0.2081,
+    "cash_buy": 0.2042,
+    "cash_sell": 0.2112,
+    "spot_buy": 0.2064,
+    "spot_sell": 0.208,
     "spot_spread_pct": 0.772,
-    "cash_spread_pct": 3.369,
-    "market_mid": 0.206969,
-    "dev_bp": 16.0,
+    "cash_spread_pct": 3.37,
+    "market_mid": 0.206844,
+    "dev_bp": 17.2,
     "lag": null,
     "stats": {
      "days": 4,
@@ -129,20 +129,20 @@
      "low": 0.2085,
      "high": 0.2094,
      "prev_close": 0.2094,
-     "chg_pct": -0.048
+     "chg_pct": -0.096
     }
    },
    {
     "source": "esun",
     "ccy": "EUR",
-    "cash_buy": 35.74,
-    "cash_sell": 36.74,
-    "spot_buy": 36.16,
-    "spot_sell": 36.32,
+    "cash_buy": 35.71,
+    "cash_sell": 36.71,
+    "spot_buy": 36.13,
+    "spot_sell": 36.29,
     "spot_spread_pct": 0.442,
-    "cash_spread_pct": 2.759,
-    "market_mid": 36.199521,
-    "dev_bp": 11.2,
+    "cash_spread_pct": 2.762,
+    "market_mid": 36.172254,
+    "dev_bp": 10.4,
     "lag": null,
     "stats": {
      "days": 4,
@@ -150,70 +150,70 @@
      "low": 36.4,
      "high": 36.48,
      "prev_close": 36.4,
-     "chg_pct": 0.11
+     "chg_pct": 0.027
     }
    },
    {
     "source": "taishin",
     "ccy": "USD",
-    "cash_buy": 32.773,
-    "cash_sell": 33.25,
-    "spot_buy": 32.975,
-    "spot_sell": 33.075,
+    "cash_buy": 32.758,
+    "cash_sell": 33.235,
+    "spot_buy": 32.96,
+    "spot_sell": 33.06,
     "spot_spread_pct": 0.303,
-    "cash_spread_pct": 1.445,
-    "market_mid": 32.985001,
-    "dev_bp": 12.1,
+    "cash_spread_pct": 1.446,
+    "market_mid": 32.971001,
+    "dev_bp": 11.8,
     "lag": null,
     "stats": {
      "days": 3,
      "pct_rank": 100,
      "low": 32.94,
-     "high": 33.075,
+     "high": 33.06,
      "prev_close": 33.035,
-     "chg_pct": 0.121
+     "chg_pct": 0.076
     }
    },
    {
     "source": "taishin",
     "ccy": "JPY",
-    "cash_buy": 0.2032,
-    "cash_sell": 0.2112,
-    "spot_buy": 0.2052,
-    "spot_sell": 0.2087,
-    "spot_spread_pct": 1.691,
-    "cash_spread_pct": 3.861,
-    "market_mid": 0.206969,
-    "dev_bp": -0.9,
+    "cash_buy": 0.203,
+    "cash_sell": 0.211,
+    "spot_buy": 0.205,
+    "spot_sell": 0.2085,
+    "spot_spread_pct": 1.693,
+    "cash_spread_pct": 3.865,
+    "market_mid": 0.206844,
+    "dev_bp": -4.5,
     "lag": null,
     "stats": {
      "days": 3,
-     "pct_rank": 100,
+     "pct_rank": 67,
      "low": 0.2083,
      "high": 0.2087,
      "prev_close": 0.2087,
-     "chg_pct": 0.0
+     "chg_pct": -0.096
     }
    },
    {
     "source": "taishin",
     "ccy": "EUR",
-    "cash_buy": 35.72,
-    "cash_sell": 36.736,
-    "spot_buy": 36.053,
-    "spot_sell": 36.403,
-    "spot_spread_pct": 0.966,
-    "cash_spread_pct": 2.804,
-    "market_mid": 36.199521,
-    "dev_bp": 7.9,
+    "cash_buy": 35.694,
+    "cash_sell": 36.71,
+    "spot_buy": 36.027,
+    "spot_sell": 36.377,
+    "spot_spread_pct": 0.967,
+    "cash_spread_pct": 2.806,
+    "market_mid": 36.172254,
+    "dev_bp": 8.2,
     "lag": null,
     "stats": {
      "days": 3,
      "pct_rank": 100,
      "low": 36.34,
-     "high": 36.403,
+     "high": 36.377,
      "prev_close": 36.34,
-     "chg_pct": 0.173
+     "chg_pct": 0.102
     }
    }
   ],
@@ -221,128 +221,101 @@
    {
     "source": "esun",
     "pair": "USDJPY",
-    "implied": 159.28605885190544,
-    "market": 159.371994,
+    "implied": 159.31467181467184,
+    "market": 159.399994,
     "diff_bp": -5.4,
     "cost_bp": 49.5
    },
    {
     "source": "esun",
     "pair": "EURUSD",
-    "implied": 1.0975166565717747,
-    "market": 1.097454,
-    "diff_bp": 0.6,
-    "cost_bp": 27.2
+    "implied": 1.0969403211148137,
+    "market": 1.097093,
+    "diff_bp": -1.4,
+    "cost_bp": 29.2
    },
    {
     "source": "esun",
     "pair": "EURJPY",
-    "implied": 174.8191027496382,
-    "market": 174.869003,
-    "diff_bp": -2.9,
-    "cost_bp": 63.3
+    "implied": 174.75868725868727,
+    "market": 174.820999,
+    "diff_bp": -3.6,
+    "cost_bp": 64.0
    },
    {
     "source": "taishin",
     "pair": "USDJPY",
-    "implied": 159.5796086011114,
-    "market": 159.371994,
-    "diff_bp": 13.0,
-    "cost_bp": 86.0
+    "implied": 159.66142684401456,
+    "market": 159.399994,
+    "diff_bp": 16.4,
+    "cost_bp": 82.7
    },
    {
     "source": "taishin",
     "pair": "EURUSD",
-    "implied": 1.0969871309613926,
-    "market": 1.097454,
-    "diff_bp": -4.3,
-    "cost_bp": 67.6
+    "implied": 1.0966979703120265,
+    "market": 1.097093,
+    "diff_bp": -3.6,
+    "cost_bp": 67.0
    },
    {
     "source": "taishin",
     "pair": "EURJPY",
-    "implied": 175.05677699927517,
-    "market": 174.869003,
-    "diff_bp": 10.7,
-    "cost_bp": 121.2
+    "implied": 175.10036275695285,
+    "market": 174.820999,
+    "diff_bp": 16.0,
+    "cost_bp": 116.1
    }
   ],
   "cycles": [
    {
-    "bp": -11.5,
-    "factor": 0.9988498441236113,
+    "bp": -11.51,
+    "factor": 0.9988494958975445,
     "steps": [
      {
       "from": "TWD",
       "to": "USD.acct@esun",
-      "rate": 0.030267259904960802,
+      "rate": 0.030276423748826786,
       "how": "即期賣出",
       "source": "esun"
      },
      {
       "from": "USD.acct@esun",
       "to": "TWD",
-      "rate": 33.001,
+      "rate": 32.991,
       "how": "即期買入",
       "source": "esun"
      }
     ]
    },
    {
-    "bp": -29.35,
-    "factor": 0.9970648324707164,
-    "steps": [
-     {
-      "from": "TWD",
-      "to": "USD.acct@esun",
-      "rate": 0.030267259904960802,
-      "how": "即期賣出",
-      "source": "esun"
-     },
-     {
-      "from": "USD.acct@esun",
-      "to": "USD.acct@taishin",
-      "rate": 0.999,
-      "how": "跨行匯款",
-      "source": "esun"
-     },
-     {
-      "from": "USD.acct@taishin",
-      "to": "TWD",
-      "rate": 32.975,
-      "how": "即期買入",
-      "source": "taishin"
-     }
-    ]
-   },
-   {
-    "bp": -30.23,
-    "factor": 0.9969765684051398,
+    "bp": -30.25,
+    "factor": 0.9969751966122202,
     "steps": [
      {
       "from": "TWD",
       "to": "USD.acct@taishin",
-      "rate": 0.03023431594860166,
+      "rate": 0.030248033877797943,
       "how": "即期賣出",
       "source": "taishin"
      },
      {
       "from": "USD.acct@taishin",
       "to": "TWD",
-      "rate": 32.975,
+      "rate": 32.96,
       "how": "即期買入",
       "source": "taishin"
      }
     ]
    },
    {
-    "bp": -32.35,
-    "factor": 0.9967648979591835,
+    "bp": -30.85,
+    "factor": 0.9969149727767695,
     "steps": [
      {
       "from": "TWD",
       "to": "USD.acct@taishin",
-      "rate": 0.03023431594860166,
+      "rate": 0.030248033877797943,
       "how": "即期賣出",
       "source": "taishin"
      },
@@ -356,87 +329,114 @@
      {
       "from": "USD.acct@esun",
       "to": "TWD",
-      "rate": 33.001,
+      "rate": 32.991,
       "how": "即期買入",
       "source": "esun"
      }
     ]
    },
    {
-    "bp": -44.05,
-    "factor": 0.9955947136563875,
+    "bp": -30.87,
+    "factor": 0.9969130158345696,
+    "steps": [
+     {
+      "from": "TWD",
+      "to": "USD.acct@esun",
+      "rate": 0.030276423748826786,
+      "how": "即期賣出",
+      "source": "esun"
+     },
+     {
+      "from": "USD.acct@esun",
+      "to": "USD.acct@taishin",
+      "rate": 0.999,
+      "how": "跨行匯款",
+      "source": "esun"
+     },
+     {
+      "from": "USD.acct@taishin",
+      "to": "TWD",
+      "rate": 32.96,
+      "how": "即期買入",
+      "source": "taishin"
+     }
+    ]
+   },
+   {
+    "bp": -44.09,
+    "factor": 0.9955910719206393,
     "steps": [
      {
       "from": "TWD",
       "to": "EUR.acct@esun",
-      "rate": 0.02753303964757709,
+      "rate": 0.02755580049600441,
       "how": "即期賣出",
       "source": "esun"
      },
      {
       "from": "EUR.acct@esun",
       "to": "TWD",
-      "rate": 36.16,
+      "rate": 36.13,
       "how": "即期買入",
       "source": "esun"
      }
     ]
    },
    {
-    "bp": -76.69,
-    "factor": 0.992331401258138,
-    "steps": [
-     {
-      "from": "TWD",
-      "to": "EUR.acct@taishin",
-      "rate": 0.02747026343982639,
-      "how": "即期賣出",
-      "source": "taishin"
-     },
-     {
-      "from": "EUR.acct@taishin",
-      "to": "EUR.acct@esun",
-      "rate": 0.999,
-      "how": "跨行匯款",
-      "source": "taishin"
-     },
-     {
-      "from": "EUR.acct@esun",
-      "to": "TWD",
-      "rate": 36.16,
-      "how": "即期買入",
-      "source": "esun"
-     }
-    ]
-   },
-   {
-    "bp": -76.89,
-    "factor": 0.9923113887554059,
+    "bp": -76.92,
+    "factor": 0.9923076923076922,
     "steps": [
      {
       "from": "TWD",
       "to": "JPY.acct@esun",
-      "rate": 4.805382027871215,
+      "rate": 4.8076923076923075,
       "how": "即期賣出",
       "source": "esun"
      },
      {
       "from": "JPY.acct@esun",
       "to": "TWD",
-      "rate": 0.2065,
+      "rate": 0.2064,
       "how": "即期買入",
       "source": "esun"
      }
     ]
    },
    {
-    "bp": -83.44,
-    "factor": 0.9916560297356827,
+    "bp": -77.83,
+    "factor": 0.9922167853313907,
+    "steps": [
+     {
+      "from": "TWD",
+      "to": "EUR.acct@taishin",
+      "rate": 0.02748989746268246,
+      "how": "即期賣出",
+      "source": "taishin"
+     },
+     {
+      "from": "EUR.acct@taishin",
+      "to": "EUR.acct@esun",
+      "rate": 0.999,
+      "how": "跨行匯款",
+      "source": "taishin"
+     },
+     {
+      "from": "EUR.acct@esun",
+      "to": "TWD",
+      "rate": 36.13,
+      "how": "即期買入",
+      "source": "esun"
+     }
+    ]
+   },
+   {
+    "bp": -82.4,
+    "factor": 0.9917600716450813,
     "steps": [
      {
       "from": "TWD",
       "to": "EUR.acct@esun",
-      "rate": 0.02753303964757709,
+      "rate": 0.02755580049600441,
       "how": "即期賣出",
       "source": "esun"
      },
@@ -450,7 +450,7 @@
      {
       "from": "EUR.acct@taishin",
       "to": "TWD",
-      "rate": 36.053,
+      "rate": 36.027,
       "how": "即期買入",
       "source": "taishin"
      }
